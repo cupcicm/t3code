@@ -83,6 +83,10 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import { createdPullRequestKey } from "./linkCreatedPullRequest.ts";
+import {
+  enrichPullRequestWithLinkedIssues,
+  selectLongestCommitMessage,
+} from "./pullRequestContent.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import { extractBranchNameFromRemoteRef } from "./remoteRefs.ts";
 import { detachStackFrame } from "./detachStackFrame.ts";
@@ -191,6 +195,7 @@ export class GitManager extends Context.Service<
     readonly createPullRequest: (input: {
       readonly cwd: string;
       readonly projectId: ProjectId;
+      readonly threadId?: ThreadId | undefined;
       readonly title: string;
       readonly body: string;
       readonly baseBranch?: string | undefined;
@@ -795,6 +800,32 @@ export const make = Effect.gen(function* () {
       ));
     return { settings: resolveProjectSettings(settings, projectId).settings, projectId };
   });
+  const readThreadIssues = Effect.fnUntraced(
+    function* (threadId: ThreadId | undefined) {
+      if (threadId === undefined) return [];
+      const shell = yield* threads.getThreadShell(threadId);
+      return shell?.issues ?? [];
+    },
+    (effect) => effect.pipe(Effect.orElseSucceed(() => [])),
+  );
+  const readRangeCommitMessages = Effect.fn("GitManager.readRangeCommitMessages")(function* (
+    cwd: string,
+    baseRangeRef: string,
+  ) {
+    const result = yield* gitCore.execute({
+      operation: "GitManager.readRangeCommitMessages",
+      cwd,
+      args: [
+        "log",
+        "--no-color",
+        "--no-show-signature",
+        "--format=%B%x00",
+        "--end-of-options",
+        `${baseRangeRef}..HEAD`,
+      ],
+    });
+    return result.stdout.split("\0").filter((entry) => entry.trim().length > 0);
+  });
   const readThreadContext = Effect.fnUntraced(
     function* (threadId: ThreadId | undefined) {
       if (threadId === undefined) return undefined;
@@ -922,6 +953,8 @@ export const make = Effect.gen(function* () {
     switch (settings.style.mode) {
       case "conventional_commits":
         return conventionalCommitsTextGenerationPolicy;
+      case "use_longest_commit":
+        return repositoryConventionsTextGenerationPolicy;
       case "custom":
         return customTextGenerationPolicy(
           settings.style.customInstructions
@@ -2289,6 +2322,14 @@ export const make = Effect.gen(function* () {
         };
       }
 
+      if (input.settings.style.mode === "use_longest_commit") {
+        return yield* new GitManagerError({
+          operation: "runCommitStep",
+          cwd: input.cwd,
+          detail: "A commit message is required when 'Use longest commit' is enabled.",
+        });
+      }
+
       const policy = yield* resolveStylePolicy(input.cwd, input.settings);
 
       const generated = yield* textGeneration
@@ -2462,6 +2503,7 @@ export const make = Effect.gen(function* () {
   const openPrFromBranch = Effect.fn("openPrFromBranch")(function* <E>(
     cwd: string,
     fallbackBranch: string | null,
+    threadId: ThreadId | undefined,
     emit: GitActionProgressEmitter,
     pushRemoteRef: { readonly remoteName: string; readonly upstreamRef: string } | undefined,
     requestedBase: string | undefined,
@@ -2527,11 +2569,13 @@ export const make = Effect.gen(function* () {
       baseRef: requestedBase ?? resolved.baseRef,
       headBranch: headContext.headBranch,
     });
+    const linkedIssues = yield* readThreadIssues(threadId);
+    const enriched = enrichPullRequestWithLinkedIssues(generated, linkedIssues);
     const bodyFile = path.join(
       tempDir,
       `t3code-pr-body-${process.pid}-${yield* randomUUIDv4(cwd)}.md`,
     );
-    yield* fileSystem.writeFileString(bodyFile, generated.body).pipe(
+    yield* fileSystem.writeFileString(bodyFile, enriched.body).pipe(
       Effect.mapError(
         (cause) =>
           new GitManagerError({
@@ -2562,7 +2606,7 @@ export const make = Effect.gen(function* () {
               },
             }
           : {}),
-        title: generated.title,
+        title: enriched.title,
         bodyFile,
         ...(draft ? { draft: true } : {}),
       })
@@ -2582,7 +2626,7 @@ export const make = Effect.gen(function* () {
         status: "created" as const,
         baseBranch,
         headBranch: headContext.headBranch,
-        title: generated.title,
+        title: enriched.title,
       };
     }
 
@@ -2607,19 +2651,32 @@ export const make = Effect.gen(function* () {
     openPrFromBranch(
       cwd,
       fallbackBranch,
+      threadId,
       emit,
       pushRemoteRef,
       undefined,
       false,
       ({ provider, baseBranch, baseRef, headBranch }) =>
         Effect.gen(function* () {
+          const baseRangeRef = yield* resolveBaseRangeRef(cwd, baseRef);
+          if (settings.style.mode === "use_longest_commit") {
+            const messages = yield* readRangeCommitMessages(cwd, baseRangeRef);
+            const selected = selectLongestCommitMessage(messages);
+            if (selected === null) {
+              return yield* new GitManagerError({
+                operation: "runPrStep",
+                cwd,
+                detail: "No commits found to build pull request title and description.",
+              });
+            }
+            return selected;
+          }
           const terms = sourceControlDefinitions.get(provider.kind).changeRequest;
           yield* emit({
             kind: "phase_started",
             phase: "pr",
             label: `Generating ${terms.shortLabel} content...`,
           });
-          const baseRangeRef = yield* resolveBaseRangeRef(cwd, baseRef);
           const rangeContext = yield* gitCore.readRangeContext(cwd, baseRangeRef);
           const policy = yield* resolveStylePolicy(cwd, settings);
           const changeRequestTemplate =
@@ -2652,6 +2709,7 @@ export const make = Effect.gen(function* () {
     const result = yield* openPrFromBranch(
       input.cwd,
       null,
+      input.threadId,
       () => Effect.void,
       undefined,
       input.baseBranch,

@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import { FitSheet } from "../../../components/ui/FitSheet";
 import { SheetHeader } from "../../../components/ui/SheetHeader";
 import { Button } from "../../../components/ui/Button";
@@ -6,11 +7,14 @@ import { T, useGT, Var } from "gt-react-native";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
+import { requiresDefaultBranchConfirmation } from "@t3tools/client-runtime/state/vcs";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 
 import { SymbolView } from "../../../components/ui/AppSymbol";
 import { AppText as Text, AppTextInput as TextInput } from "../../../components/ui/AppText";
 import { cn } from "../../../lib/cn";
 import { useEnvironmentQuery } from "../../../state/query";
+import { serverEnvironment } from "../../../state/server";
 import { useThreadSelection } from "../../../state/use-thread-selection";
 import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-git-actions";
 import { useSelectedThreadGitState } from "../../../state/use-selected-thread-git-state";
@@ -20,9 +24,10 @@ import { vcsEnvironment } from "../../../state/vcs";
 type GitCommitSheetProps = StaticScreenProps<{
   readonly environmentId: string;
   readonly threadId: string;
+  readonly commitAction?: "commit" | "commit_push" | "commit_push_pr";
 }>;
 
-export function GitCommitSheet(_props: GitCommitSheetProps) {
+export function GitCommitSheet(props: GitCommitSheetProps) {
   const gt = useGT();
   const navigation = useNavigation();
   const { selectedThread } = useThreadSelection();
@@ -30,6 +35,15 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
   const { canWriteSourceControl, canChangeThreadBranch } = gitActions;
+  const serverConfig = useAtomValue(
+    serverEnvironment.configValueAtom(selectedThread?.environmentId ?? null),
+  );
+  const requiresManualCommitMessage =
+    serverConfig !== null &&
+    serverConfig !== undefined &&
+    resolveProjectSettings(serverConfig.settings, selectedThread?.projectId ?? null).settings
+      .sourceControlWritingStyle.mode === "use_longest_commit";
+  const commitAction = props.route.params.commitAction ?? "commit";
 
   const gitStatus = useEnvironmentQuery(
     selectedThread !== null && selectedThreadCwd !== null
@@ -53,15 +67,39 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
   const selectedInsertions = selectedFiles.reduce((sum, file) => sum + file.insertions, 0);
   const selectedDeletions = selectedFiles.reduce((sum, file) => sum + file.deletions, 0);
 
+  const missingCommitMessage =
+    requiresManualCommitMessage && dialogCommitMessage.trim().length === 0;
+
   const runCommitAction = async (featureBranch: boolean) => {
     if (!canWriteSourceControl || (featureBranch && !canChangeThreadBranch)) return;
     const commitMessage = dialogCommitMessage.trim();
+    if (requiresManualCommitMessage && commitMessage.length === 0) return;
+    const filePaths = !allSelected ? selectedFiles.map((file) => file.path) : undefined;
+    const branchName = gitStatus.data?.refName;
+    if (
+      !featureBranch &&
+      branchName &&
+      commitAction !== "commit" &&
+      requiresDefaultBranchConfirmation(commitAction, isDefaultRef)
+    ) {
+      navigation.goBack();
+      navigation.navigate("GitConfirm", {
+        environmentId: props.route.params.environmentId,
+        threadId: props.route.params.threadId,
+        confirmAction: commitAction,
+        branchName,
+        includesCommit: "true",
+        ...(commitMessage ? { commitMessage } : {}),
+        ...(filePaths ? { filePaths: filePaths.join(",") } : {}),
+      });
+      return;
+    }
     navigation.goBack();
     await gitActions.onRunSelectedThreadGitAction({
-      action: "commit",
+      action: commitAction,
       featureBranch,
       ...(commitMessage ? { commitMessage } : {}),
-      ...(!allSelected ? { filePaths: selectedFiles.map((file) => file.path) } : {}),
+      ...(filePaths ? { filePaths } : {}),
     });
   };
 
@@ -98,9 +136,11 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
           textAlignVertical="top"
           className="min-h-24 rounded-xl bg-subtle px-4 py-3 text-base"
         />
-        <Text className="text-xs text-foreground-muted">
-          <T>Leave empty to generate a message automatically.</T>
-        </Text>
+        {!requiresManualCommitMessage ? (
+          <Text className="text-xs text-foreground-muted">
+            <T>Leave empty to generate a message automatically.</T>
+          </Text>
+        ) : null}
       </View>
       <View>
         <View className="flex-row items-center justify-between gap-2 pb-2">
@@ -209,7 +249,7 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
           icon="checkmark"
           tone="primary"
           fullWidth
-          disabled={!canWriteSourceControl || noneSelected || busy}
+          disabled={!canWriteSourceControl || noneSelected || busy || missingCommitMessage}
           onPress={() => void runCommitAction(false)}
         />
         <Button
@@ -217,7 +257,13 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
           icon="arrow.branch"
           tone="text"
           fullWidth
-          disabled={!canWriteSourceControl || !canChangeThreadBranch || noneSelected || busy}
+          disabled={
+            !canWriteSourceControl ||
+            !canChangeThreadBranch ||
+            noneSelected ||
+            busy ||
+            missingCommitMessage
+          }
           onPress={() => void runCommitAction(true)}
         />
       </View>

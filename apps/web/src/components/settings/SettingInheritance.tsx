@@ -36,6 +36,7 @@ interface InheritanceLayer {
 const WRITING_STYLE_LABELS: Record<string, string> = {
   repo_conventions: msg("Repository conventions"),
   conventional_commits: msg("Conventional Commits"),
+  use_longest_commit: msg("Use longest commit"),
   custom: msg("Custom instructions"),
 };
 

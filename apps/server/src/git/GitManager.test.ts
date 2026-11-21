@@ -35,6 +35,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   EventId,
   GitCommandError,
+  IssueTrackerKind,
   MessageId,
   ProjectId,
   ProviderDriverKind,
@@ -121,6 +122,7 @@ type FakeProviderCall =
       readonly baseRefName: string;
       readonly headSelector: string;
       readonly title: string;
+      readonly body: string;
       readonly draft: unknown;
     }
   | { readonly operation: "getChangeRequest"; readonly reference: string }
@@ -513,6 +515,7 @@ function createFakeSourceControlProvider(scenario: FakeProviderScenario = {}): {
           baseRefName: input.baseRefName,
           headSelector: input.headSelector,
           title: input.title,
+          body: NodeFS.readFileSync(input.bodyFile, "utf8"),
           draft: "draft" in input ? input.draft : undefined,
         }),
       getDefaultBranch: (input) =>
@@ -4372,6 +4375,163 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(generatedPrompt).not.toContain("abandoned output");
       expect(Buffer.byteLength(generatedThreadContext ?? "")).toBeLessThanOrEqual(16_000);
     }),
+  );
+
+  it.effect(
+    "use_longest_commit requires manual commit messages, builds PR text from the longest commit, and adds linked Linear issues",
+    () =>
+      Effect.gen(function* () {
+        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        yield* initRepo(repoDir);
+        const remoteDir = yield* createBareRemote();
+        yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+        yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+        yield* runGit(repoDir, ["checkout", "-b", "feature/longest-commit"]);
+
+        const threadId = ThreadId.make("thread:longest-commit");
+        const projectId = ProjectId.make("project:longest-commit");
+        const providerInstanceId = ProviderInstanceId.make("codex");
+        const createdAt = DateTime.makeUnsafe("2026-04-01T12:00:00.000Z");
+        const linkedAt = "2026-04-01T12:00:00.000Z";
+        let commitGenerationCalls = 0;
+        let prGenerationCalls = 0;
+
+        const { manager, providerCalls } = yield* makeManager({
+          providerScenario: { prListSequence: [[], [], [], []] },
+          serverSettings: {
+            sourceControlWritingStyle: {
+              mode: "use_longest_commit" as const,
+            },
+          },
+          textGeneration: {
+            generateCommitMessage: () => {
+              commitGenerationCalls += 1;
+              return Effect.succeed({ subject: "Generated", body: "" });
+            },
+            generatePrContent: () => {
+              prGenerationCalls += 1;
+              return Effect.succeed({ title: "Generated PR", body: "Generated body" });
+            },
+          },
+          seed: Effect.gen(function* () {
+            const store = yield* ProjectionStore.ProjectionStoreV2;
+            const threadPayload = {
+              createdBy: "user" as const,
+              creationSource: "web" as const,
+              id: threadId,
+              projectId,
+              title: "Longest commit PR",
+              providerInstanceId,
+              modelSelection: { instanceId: providerInstanceId, model: "gpt-5" },
+              runtimeMode: "full-access" as const,
+              interactionMode: "default" as const,
+              branch: "feature/longest-commit",
+              worktreePath: repoDir,
+              activeProviderThreadId: null,
+              lineage: {
+                parentThreadId: null,
+                relationshipToParent: null,
+                rootThreadId: threadId,
+              },
+              forkedFrom: null,
+              createdAt,
+              updatedAt: createdAt,
+              archivedAt: null,
+              settledOverride: null,
+              settledAt: null,
+              lastVisitedAt: null,
+              deletedAt: null,
+            };
+            yield* store.apply({
+              id: EventId.make("event:longest-commit:thread"),
+              type: "thread.created",
+              threadId,
+              providerInstanceId,
+              occurredAt: createdAt,
+              payload: threadPayload,
+            });
+            yield* store.apply({
+              id: EventId.make("event:longest-commit:issue"),
+              type: "thread.issue-synced",
+              threadId,
+              occurredAt: createdAt,
+              payload: {
+                ...threadPayload,
+                issues: [
+                  {
+                    tracker: IssueTrackerKind.make("linear"),
+                    host: "linear.app",
+                    scope: "ENG",
+                    key: "ENG-404",
+                    projectId,
+                    url: "https://linear.app/acme/issue/ENG-404/serialize-refresh",
+                    source: "manual",
+                    linkedAt,
+                    displayKey: "ENG-404",
+                    title: "Serialize token refresh",
+                  },
+                ],
+              },
+            });
+          }),
+        });
+
+        NodeFS.writeFileSync(NodePath.join(repoDir, "a.txt"), "first\n");
+        const commitError = yield* Effect.flip(
+          manager.runStackedAction({
+            cwd: repoDir,
+            action: "commit",
+            actionId: "manual-commit-required",
+            threadId,
+          }),
+        );
+        expect(commitError.message).toContain("A commit message is required");
+        expect(commitGenerationCalls).toBe(0);
+
+        yield* manager.runStackedAction({
+          cwd: repoDir,
+          action: "commit",
+          actionId: "commit-short",
+          threadId,
+          commitMessage: "Short commit",
+        });
+
+        NodeFS.writeFileSync(NodePath.join(repoDir, "b.txt"), "second\n");
+        yield* manager.runStackedAction({
+          cwd: repoDir,
+          action: "commit_push_pr",
+          actionId: "commit-longest",
+          threadId,
+          commitMessage:
+            "Serialize token refresh\n\nAvoid concurrent refresh races when two tabs reconnect.",
+        });
+
+        expect(commitGenerationCalls).toBe(0);
+        expect(prGenerationCalls).toBe(0);
+        const createCall = providerCalls.find((call) => call.operation === "createChangeRequest");
+        expect(createCall).toMatchObject({
+          operation: "createChangeRequest",
+          title: "[ENG-404] Serialize token refresh",
+          body: "- Linear [ENG-404](https://linear.app/acme/issue/ENG-404/serialize-refresh)\n\nAvoid concurrent refresh races when two tabs reconnect.",
+        });
+
+        yield* manager.createPullRequest({
+          cwd: repoDir,
+          projectId,
+          threadId,
+          title: "Manual PR title",
+          body: "Manual PR body",
+        });
+
+        const createCalls = providerCalls.filter(
+          (call) => call.operation === "createChangeRequest",
+        );
+        expect(createCalls[1]).toMatchObject({
+          operation: "createChangeRequest",
+          title: "[ENG-404] Manual PR title",
+          body: "- Linear [ENG-404](https://linear.app/acme/issue/ENG-404/serialize-refresh)\n\nManual PR body",
+        });
+      }),
   );
 
   it.effect.each(["commit", "short-commit", "tag", "revision"] as const)(

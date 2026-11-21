@@ -187,8 +187,11 @@ the intended remote with `git branch --set-upstream-to=<remote>/<branch>`.
 
 Choose how commit messages and pull request titles and descriptions are written in
 **Settings → Source control & issues → Commits & pull requests**. **Repository conventions** uses the
-project's instructions and recent commit subjects. **Custom instructions** applies your own
-instructions to commits and pull requests.
+project's instructions and recent commit subjects. **Use longest commit** requires manual commit
+messages and uses the branch's longest commit message verbatim as the pull request title and
+description. **Custom instructions** applies your own instructions to commits and pull requests.
+When a thread is linked to a Linear issue, creating a pull request prefixes the title with
+`[<issue key>]` and adds the Linear link to the description automatically.
 
 ## Review and merge
 
