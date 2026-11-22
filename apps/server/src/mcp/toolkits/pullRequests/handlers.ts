@@ -1021,6 +1021,7 @@ const make = Effect.gen(function* () {
           .createPullRequest({
             cwd: thread.worktreePath ?? project.workspaceRoot,
             projectId: project.id,
+            threadId: thread.id,
             title: input.title,
             body: input.body,
             baseBranch: input.base,

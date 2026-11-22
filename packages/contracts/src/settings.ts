@@ -1055,6 +1055,7 @@ export type ObservabilitySettings = typeof ObservabilitySettings.Type;
 export const SourceControlWritingStyleMode = Schema.Literals([
   "repo_conventions",
   "conventional_commits",
+  "use_longest_commit",
   "custom",
 ]);
 export type SourceControlWritingStyleMode = typeof SourceControlWritingStyleMode.Type;

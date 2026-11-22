@@ -117,6 +117,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { vcsActionManager, vcsEnvironment, vcsStatusRevalidation } from "~/state/vcs";
 import { randomUUID } from "~/lib/utils";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import {
   THREAD_DETAILS_PANEL_CHEVRON_CLASS,
@@ -1009,10 +1010,19 @@ function CheckoutGitActionsControl({
   );
   const activeServerThread =
     activeServerThreadShell ?? activeServerThreadProjection?.projection.thread ?? null;
+  const activeProjectId = activeServerThread?.projectId ?? activeDraftThread?.projectId ?? null;
+  const requiresManualCommitMessage =
+    serverConfig !== null &&
+    serverConfig !== undefined &&
+    resolveProjectSettings(serverConfig.settings, activeProjectId).settings
+      .sourceControlWritingStyle.mode === "use_longest_commit";
   const isLocalDraftThread = activeDraftThread !== null && activeServerThread === null;
   const canChangeThreadBranch = canWriteSourceControl && (isLocalDraftThread || canOperateThread);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
+  const [dialogCommitAction, setDialogCommitAction] = useState<
+    "commit" | "commit_push" | "commit_push_pr"
+  >("commit");
   const [dialogCommitMessage, setDialogCommitMessage] = useState("");
   const [excludedFiles, setExcludedFiles] = useState<ReadonlySet<string>>(new Set());
   const [isEditingFiles, setIsEditingFiles] = useState(false);
@@ -1383,14 +1393,17 @@ function CheckoutGitActionsControl({
   const runDialogActionOnNewBranch = () => {
     if (!isCommitDialogOpen) return;
     const commitMessage = dialogCommitMessage.trim();
+    if (requiresManualCommitMessage && !commitMessage) return;
+    const action = dialogCommitAction;
 
     setIsCommitDialogOpen(false);
+    setDialogCommitAction("commit");
     setDialogCommitMessage("");
     setExcludedFiles(new Set());
     setIsEditingFiles(false);
 
     void runGitActionWithToast({
-      action: "commit",
+      action,
       ...(commitMessage ? { commitMessage } : {}),
       ...(!allSelected ? { filePaths: selectedFiles.map((f) => f.path) } : {}),
       featureBranch: true,
@@ -1454,6 +1467,18 @@ function CheckoutGitActionsControl({
       return;
     }
     if (quickAction.action) {
+      if (
+        requiresManualCommitMessage &&
+        (quickAction.action === "commit" ||
+          quickAction.action === "commit_push" ||
+          quickAction.action === "commit_push_pr")
+      ) {
+        setDialogCommitAction(quickAction.action);
+        setExcludedFiles(new Set());
+        setIsEditingFiles(false);
+        setIsCommitDialogOpen(true);
+        return;
+      }
       void runGitActionWithToast({ action: quickAction.action });
     }
   };
@@ -1468,6 +1493,7 @@ function CheckoutGitActionsControl({
       void runGitActionWithToast({ action: "create_pr" });
       return;
     }
+    setDialogCommitAction("commit");
     setExcludedFiles(new Set());
     setIsEditingFiles(false);
     setIsCommitDialogOpen(true);
@@ -1476,12 +1502,15 @@ function CheckoutGitActionsControl({
   const runDialogAction = () => {
     if (!isCommitDialogOpen) return;
     const commitMessage = dialogCommitMessage.trim();
+    if (requiresManualCommitMessage && !commitMessage) return;
+    const action = dialogCommitAction;
     setIsCommitDialogOpen(false);
+    setDialogCommitAction("commit");
     setDialogCommitMessage("");
     setExcludedFiles(new Set());
     setIsEditingFiles(false);
     void runGitActionWithToast({
-      action: "commit",
+      action,
       ...(commitMessage ? { commitMessage } : {}),
       ...(!allSelected ? { filePaths: selectedFiles.map((f) => f.path) } : {}),
     }).then(restoreDialogCommitMessageOnFailure(commitMessage));
@@ -1855,6 +1884,7 @@ function CheckoutGitActionsControl({
         onOpenChange={(open) => {
           if (!open) {
             setIsCommitDialogOpen(false);
+            setDialogCommitAction("commit");
             setDialogCommitMessage("");
             setExcludedFiles(new Set());
             setIsEditingFiles(false);
@@ -2007,12 +2037,20 @@ function CheckoutGitActionsControl({
             </div>
             <div className="space-y-1">
               <p className="text-sm font-medium">
-                <T>Commit message (optional)</T>
+                {requiresManualCommitMessage ? (
+                  <T>Commit message</T>
+                ) : (
+                  <T>Commit message (optional)</T>
+                )}
               </p>
               <Textarea
                 value={dialogCommitMessage}
                 onChange={(event) => setDialogCommitMessage(event.target.value)}
-                placeholder={gt("Leave empty to auto-generate")}
+                placeholder={
+                  requiresManualCommitMessage
+                    ? gt("Write a commit message")
+                    : gt("Leave empty to auto-generate")
+                }
                 size="sm"
               />
             </div>
@@ -2023,6 +2061,7 @@ function CheckoutGitActionsControl({
               size="sm"
               onClick={() => {
                 setIsCommitDialogOpen(false);
+                setDialogCommitAction("commit");
                 setDialogCommitMessage("");
                 setExcludedFiles(new Set());
                 setIsEditingFiles(false);
@@ -2033,17 +2072,36 @@ function CheckoutGitActionsControl({
             <Button
               variant="outline"
               size="sm"
-              disabled={!canChangeThreadBranch || noneSelected}
+              disabled={
+                !canChangeThreadBranch ||
+                noneSelected ||
+                (requiresManualCommitMessage && dialogCommitMessage.trim().length === 0)
+              }
               onClick={runDialogActionOnNewBranch}
             >
               <T>Commit on new branch</T>
             </Button>
             <Button
               size="sm"
-              disabled={!canWriteSourceControl || noneSelected}
+              disabled={
+                !canWriteSourceControl ||
+                noneSelected ||
+                (requiresManualCommitMessage && dialogCommitMessage.trim().length === 0)
+              }
               onClick={runDialogAction}
             >
-              <T context="verb">Commit</T>
+              {dialogCommitAction === "commit_push" ? (
+                <T>Commit & push</T>
+              ) : dialogCommitAction === "commit_push_pr" ? (
+                gt("Commit, push & {term, select, mr {MR} cr {change request} other {PR}}", {
+                  term: changeRequestTermKind(
+                    sourceControlClients.get(gitStatusForActions?.sourceControlProvider?.kind)
+                      .changeRequest,
+                  ),
+                })
+              ) : (
+                <T context="verb">Commit</T>
+              )}
             </Button>
           </DialogFooter>
         </DialogPopup>

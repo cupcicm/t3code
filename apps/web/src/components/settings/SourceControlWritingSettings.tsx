@@ -60,6 +60,12 @@ const MODE_OPTIONS: Record<SourceControlWritingStyleMode, { label: string; descr
         "Conventional Commit prefixes, with short pull request titles and descriptions.",
       ),
     },
+    use_longest_commit: {
+      label: msg("Use longest commit"),
+      description: msg(
+        "Write commit messages yourself and use the longest commit message on the branch for pull request titles and descriptions.",
+      ),
+    },
     custom: {
       label: msg("Custom instructions"),
       description: msg(

@@ -1,3 +1,5 @@
+import { useAtomValue } from "@effect/atom-react";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { msg, useGT, useMessages } from "gt-react-native";
 
 import * as Dialog from "../../components/ui/Dialog";
@@ -21,7 +23,9 @@ import { sourceControlClients } from "@t3tools/client-runtime/source-control-cli
 import { changeRequestTermKind } from "../../lib/changeRequestTerm";
 
 import { m, type MessageResolver } from "../../i18n/messages";
+import { serverEnvironment } from "../../state/server";
 import { useEnvironmentScope } from "../../state/session";
+import { useThreadSelection } from "../../state/use-thread-selection";
 import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import {
   basename,
@@ -130,10 +134,18 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
   const messages = useMessages();
   const openPullRequest = useOpenPullRequest();
   const environmentId = props.environmentId;
+  const scopedEnvironmentId = environmentId ? EnvironmentId.make(String(environmentId)) : null;
   const canWriteSourceControl = useEnvironmentScope(
-    environmentId ? EnvironmentId.make(String(environmentId)) : null,
+    scopedEnvironmentId,
     AuthSourceControlWriteScope,
   );
+  const serverConfig = useAtomValue(serverEnvironment.configValueAtom(scopedEnvironmentId));
+  const { selectedThread } = useThreadSelection();
+  const requiresManualCommitMessage =
+    serverConfig !== null &&
+    serverConfig !== undefined &&
+    resolveProjectSettings(serverConfig.settings, selectedThread?.projectId ?? null).settings
+      .sourceControlWritingStyle.mode === "use_longest_commit";
   const threadId = props.threadId;
   const { gitStatus, gitOperationLabel, onPull, onRunAction } = props;
 
@@ -255,6 +267,19 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
       return;
     }
     if (quickAction.kind === "run_action" && quickAction.action) {
+      if (
+        requiresManualCommitMessage &&
+        (quickAction.action === "commit" ||
+          quickAction.action === "commit_push" ||
+          quickAction.action === "commit_push_pr")
+      ) {
+        navigation.navigate("GitCommit", {
+          environmentId: String(environmentId),
+          threadId: String(threadId),
+          commitAction: quickAction.action,
+        });
+        return;
+      }
       await runActionWithPrompt({ action: quickAction.action });
     }
   };

@@ -1115,7 +1115,11 @@ describe("source control tools", () => {
 
   it.effect("opens a PR from the thread's worktree and links it even if dismissed", () =>
     Effect.gen(function* () {
-      const opened: Array<{ readonly cwd: string; readonly draft: boolean | undefined }> = [];
+      const opened: Array<{
+        readonly cwd: string;
+        readonly threadId: string | undefined;
+        readonly draft: boolean | undefined;
+      }> = [];
       const harness = yield* makeHarness({
         thread: {
           ...makeThread([makeLink(43, { source: "stack-dismissed" })]),
@@ -1123,7 +1127,9 @@ describe("source control tools", () => {
         },
         git: {
           createPullRequest: (input) =>
-            Effect.sync(() => opened.push({ cwd: input.cwd, draft: input.draft })).pipe(
+            Effect.sync(() =>
+              opened.push({ cwd: input.cwd, threadId: input.threadId, draft: input.draft }),
+            ).pipe(
               Effect.as({
                 status: "created" as const,
                 url: "https://github.com/t3tools/t3code/pull/43",
@@ -1141,7 +1147,7 @@ describe("source control tools", () => {
         draft: true,
       });
       expect(result).toMatchObject({ number: 43, created: true });
-      expect(opened).toEqual([{ cwd: "/workspace/worktree", draft: true }]);
+      expect(opened).toEqual([{ cwd: "/workspace/worktree", threadId: "thread-1", draft: true }]);
       expect(yield* Ref.get(harness.commands)).toMatchObject([
         { type: "thread.pull-request.link", number: 43, source: "created" },
       ]);
