@@ -1085,6 +1085,13 @@ export const DesktopMediaReadSchema = Schema.Struct({
 });
 export type DesktopMediaRead = typeof DesktopMediaReadSchema.Type;
 
+export const DesktopClipboardWriteInputSchema = Schema.Struct({
+  text: Schema.String.check(Schema.isMaxLength(256 * 1024)),
+  html: Schema.optional(Schema.String.check(Schema.isMaxLength(256 * 1024))),
+  rtf: Schema.optional(Schema.String.check(Schema.isMaxLength(256 * 1024))),
+});
+export type DesktopClipboardWriteInput = typeof DesktopClipboardWriteInputSchema.Type;
+
 export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
@@ -1191,6 +1198,7 @@ export interface DesktopBridge {
   openSystemSettings: (pane: SystemSettingsPane) => Promise<boolean>;
   checkSystemPermission: (pane: SystemSettingsPane) => Promise<boolean>;
   probeRemoteEditors: () => Promise<readonly EditorId[]>;
+  writeClipboard?: (input: DesktopClipboardWriteInput) => Promise<boolean>;
   pasteAsText: () => Promise<void>;
   onMenuAction: (listener: (action: string) => void) => () => void;
   onSnapShotEvent: (listener: (event: DesktopSnapShotEvent) => void) => () => void;

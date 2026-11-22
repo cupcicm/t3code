@@ -11,8 +11,9 @@ import { m, type MessageResolver } from "~/i18n/messages";
 import { readLocalApi } from "~/localApi";
 
 import { toastManager } from "../ui/toast";
+import { writePullRequestPrettyLinkToClipboard } from "./pullRequestPrettyLink";
 
-export type PullRequestLinkContextMenuAction = "copy-link" | "open-external";
+export type PullRequestLinkContextMenuAction = "copy-link" | "copy-pretty-link" | "open-external";
 
 export const openOnHostLabel = (
   host: SourceControlDefinition,
@@ -27,16 +28,21 @@ function pullRequestLinkContextMenuItems(
 ): readonly ContextMenuItem<PullRequestLinkContextMenuAction>[] {
   return [
     { id: "copy-link", label: m(msg("Copy link")), icon: "copy" },
+    { id: "copy-pretty-link", label: m(msg("Copy pretty link")), icon: "copy" },
     { id: "open-external", label: openLabel },
   ];
 }
 
 export async function showPullRequestLinkContextMenu({
   url,
+  title,
+  number,
   openLabel,
   position,
 }: {
   readonly url: string;
+  readonly title?: string | null;
+  readonly number?: number;
   readonly openLabel: string;
   readonly position: { readonly x: number; readonly y: number };
 }): Promise<void> {
@@ -55,12 +61,21 @@ export async function showPullRequestLinkContextMenu({
         unavailableMessage: msg("Clipboard API is unavailable while copying link."),
         failureMessage: msg("Failed to copy link to the clipboard."),
       });
+    else if (action === "copy-pretty-link")
+      await writePullRequestPrettyLinkToClipboard(
+        { url, title, number },
+        {
+          target: "pretty link",
+          unavailableMessage: msg("Clipboard API is unavailable while copying pretty link."),
+          failureMessage: msg("Failed to copy pretty link to the clipboard."),
+        },
+      );
     else if (action === "open-external") await api.shell.openExternal(url);
   } catch {
     toastManager.add({
       type: "error",
       title:
-        action === "copy-link"
+        action === "copy-link" || action === "copy-pretty-link"
           ? m(msg("Could not copy the link"))
           : m(msg("Could not open the link")),
     });

@@ -3,6 +3,7 @@ import { decodeMsg, msg, T, useGT, useMessages, Var } from "gt-react";
 import { m, type MessageResolver } from "../i18n/messages";
 import { ThreadContextDragGhost } from "./chat/ThreadContextDragGhost";
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
+import { resolveThreadCurrentPullRequestLink } from "@t3tools/client-runtime/thread-pull-requests";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
 import {
@@ -103,7 +104,8 @@ import { useAtomValue } from "@effect/atom-react";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
+import { useOpenPanelPullRequest } from "../hooks/useOpenPanelPullRequestUrl";
+import { copyPullRequestPrettyLinkWithToast } from "./pullRequest/pullRequestPrettyLink";
 import { copyThreadReference } from "../lib/copyThreadReference";
 import {
   queueWorkspaceFocusFromPalette,
@@ -512,13 +514,38 @@ function OpenCommandPaletteDialog(props: {
       : activeThread
         ? scopeThreadRef(activeThread.environmentId, activeThread.id)
         : null;
-  const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(referenceThreadRef);
+  const openPanelPullRequest = useOpenPanelPullRequest(referenceThreadRef);
+  const openPanelPullRequestUrl =
+    openPanelPullRequest === undefined ? undefined : (openPanelPullRequest?.url ?? null);
   const activeThreadServerConfig = useServerConfigs().get(
     activeThread?.environmentId ?? ("" as EnvironmentId),
   );
   const canShareActiveThreadWithGuest = useAtomValue(
     canShareWithGuestAtom(activeThread?.environmentId ?? ("" as EnvironmentId)),
   );
+  const currentThreadPullRequest = resolveThreadCurrentPullRequestLink(
+    activeThread?.pullRequests ?? [],
+  );
+  const fallbackThreadPullRequest =
+    activeThread?.linkedPullRequest ?? activeThread?.branchPullRequest ?? null;
+  const activePullRequestPrettyLinkTarget =
+    referenceThreadRef === null || (pathname === "/pull-requests" && !openPanelPullRequest)
+      ? null
+      : openPanelPullRequest !== undefined
+        ? openPanelPullRequest
+        : currentThreadPullRequest
+          ? {
+              url: currentThreadPullRequest.url,
+              title: currentThreadPullRequest.snapshot?.title ?? null,
+              number: currentThreadPullRequest.number,
+            }
+          : fallbackThreadPullRequest
+            ? {
+                url: fallbackThreadPullRequest.url,
+                title: null,
+                number: fallbackThreadPullRequest.number,
+              }
+            : null;
   const activeThreadReferenceCopyTarget =
     referenceThreadRef === null || (pathname === "/pull-requests" && !openPanelPullRequestUrl)
       ? null
@@ -537,6 +564,10 @@ function OpenCommandPaletteDialog(props: {
   const copyActiveThreadReference = async () => {
     if (activeThreadReferenceCopyTarget === null) return;
     await copyThreadReference(activeThreadReferenceCopyTarget);
+  };
+  const copyActivePullRequestPrettyLink = async () => {
+    if (activePullRequestPrettyLinkTarget === null) return;
+    await copyPullRequestPrettyLinkWithToast(activePullRequestPrettyLinkTarget, messages);
   };
   // Threads the sidebar shows under their parent open there, so opening a project never lands on one.
   const delegatedUnderParent = useDelegatedUnderParent();
@@ -1501,6 +1532,19 @@ function OpenCommandPaletteDialog(props: {
       icon: <LinkIcon className={ITEM_ICON_CLASS} />,
       shortcutCommand: "thread.copyReference",
       run: copyActiveThreadReference,
+    });
+  }
+
+  if (activePullRequestPrettyLinkTarget !== null) {
+    actionItems.push({
+      kind: "action",
+      value: "action:copy-pull-request-pretty-link",
+      searchTerms: ["copy", "pretty", "pull request", "pr", "link", "rich", "slack"],
+      title: gt("Copy pretty PR link"),
+      description: activePullRequestPrettyLinkTarget.title ?? activePullRequestPrettyLinkTarget.url,
+      icon: <LinkIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "pullRequest.copyPrettyLink",
+      run: copyActivePullRequestPrettyLink,
     });
   }
 
@@ -2718,6 +2762,14 @@ function OpenCommandPaletteDialog(props: {
       if (activeThreadReferenceCopyTarget === null) return;
       setOpen(false);
       void copyActiveThreadReference();
+      return;
+    }
+    if (command === "pullRequest.copyPrettyLink") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (activePullRequestPrettyLinkTarget === null) return;
+      setOpen(false);
+      void copyActivePullRequestPrettyLink();
       return;
     }
     // ChatView ignores shortcuts while the palette is open, so intercept find here.

@@ -12262,5 +12262,14 @@
   "27d76249d09eb69f": "Review guide ready",
   "faa3bb26abb39c93": "Review guide failed",
   "b7df38b7d8792d78": "Open guide",
-  "9e91e9a77b664e4e": "Could not start a review guide"
+  "9e91e9a77b664e4e": "Could not start a review guide",
+  "c4d5e3b2b1d422bc": "Copy pretty PR link",
+  "a35bbd3d3032cc21": "Copy pretty link",
+  "cadf0f7395d15317": "Copy pretty link",
+  "a4e4eefa83975171": "Clipboard API is unavailable while copying pretty link.",
+  "8cd666accbca34a0": "Failed to copy pretty link to the clipboard.",
+  "835cadd86ad04bd6": "Clipboard API is unavailable while copying {term, select, mr {merge request} cr {change request} other {pull request}} pretty link.",
+  "fef9561eac25cc70": "Failed to copy {term, select, mr {merge request} cr {change request} other {pull request}} pretty link to the clipboard.",
+  "feba89936ec689d4": "Failed to copy {term, select, mr {MR} cr {change request} other {PR}} pretty link",
+  "a47f7307baeb45cc": "Pull Request: Copy Pretty Link"
 }

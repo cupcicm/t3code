@@ -12252,5 +12252,14 @@
   "27d76249d09eb69f": "Guia de revisão pronto",
   "faa3bb26abb39c93": "O guia de revisão falhou",
   "b7df38b7d8792d78": "Abrir guia",
-  "9e91e9a77b664e4e": "Não foi possível iniciar um guia de revisão"
+  "9e91e9a77b664e4e": "Não foi possível iniciar um guia de revisão",
+  "c4d5e3b2b1d422bc": "Copiar link formatado do PR",
+  "a35bbd3d3032cc21": "Copiar link formatado",
+  "cadf0f7395d15317": "Copiar link formatado",
+  "a4e4eefa83975171": "A API da área de transferência não está disponível ao copiar o link formatado.",
+  "8cd666accbca34a0": "Falha ao copiar o link formatado para a área de transferência.",
+  "835cadd86ad04bd6": "A API da área de transferência não está disponível ao copiar o link formatado {term, select, mr {do merge request} cr {da solicitação de alteração} other {do pull request}}.",
+  "fef9561eac25cc70": "Falha ao copiar o link formatado {term, select, mr {do merge request} cr {da solicitação de alteração} other {do pull request}} para a área de transferência.",
+  "feba89936ec689d4": "Falha ao copiar o link formatado {term, select, mr {do MR} cr {da solicitação de alteração} other {do PR}}",
+  "a47f7307baeb45cc": "Pull request: copiar link formatado"
 }

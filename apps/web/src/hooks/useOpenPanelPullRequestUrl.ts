@@ -39,7 +39,15 @@ function panelPullRequestReference(
     : input;
 }
 
-export function useOpenPanelPullRequestUrl(threadRef: ScopedThreadRef | null) {
+export interface OpenPanelPullRequest {
+  readonly url: string;
+  readonly title: string | null;
+  readonly number: number;
+}
+
+export function useOpenPanelPullRequest(
+  threadRef: ScopedThreadRef | null,
+): OpenPanelPullRequest | null | undefined {
   const surface = useRightPanelStore((state) =>
     selectActiveRightPanelSurface(state.byThreadKey, threadRef),
   );
@@ -79,5 +87,18 @@ export function useOpenPanelPullRequestUrl(threadRef: ScopedThreadRef | null) {
         })
       : null,
   ).data;
-  return reference ? ((detail ?? cachedDetail)?.url ?? fallbackUrl) : undefined;
+  if (!reference) return undefined;
+  const resolved = detail ?? cachedDetail;
+  const url = resolved?.url ?? fallbackUrl;
+  if (!url) return null;
+  return {
+    url,
+    title: resolved?.title ?? null,
+    number: reference.number,
+  };
+}
+
+export function useOpenPanelPullRequestUrl(threadRef: ScopedThreadRef | null) {
+  const open = useOpenPanelPullRequest(threadRef);
+  return open === undefined ? undefined : (open?.url ?? null);
 }

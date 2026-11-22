@@ -108,6 +108,7 @@ export function PullRequestActionsMenu({
   perform,
   openOnHostText,
   copyReference,
+  copyPrettyLink,
 }: {
   environmentId: EnvironmentId;
   reference: PullRequestRef;
@@ -115,6 +116,7 @@ export function PullRequestActionsMenu({
   detail: Pick<
     PullRequestDetail,
     | "url"
+    | "title"
     | "state"
     | "isDraft"
     | "headBranch"
@@ -161,6 +163,7 @@ export function PullRequestActionsMenu({
   perform: PerformPullRequestAction;
   openOnHostText: string;
   copyReference: (value: string, failureTitle: string) => void;
+  copyPrettyLink: () => void;
 }) {
   const gt = useGT();
   const openLink = useOpenLink(threadRef);
@@ -457,6 +460,13 @@ export function PullRequestActionsMenu({
           <T>Copy link</T>
           <MenuShortcut>
             {shortcutLabelForCommand(keybindings, "thread.copyReference")}
+          </MenuShortcut>
+        </MenuItem>
+        <MenuItem onClick={copyPrettyLink}>
+          <LinkIcon className="size-3.5" />
+          <T>Copy pretty link</T>
+          <MenuShortcut>
+            {shortcutLabelForCommand(keybindings, "pullRequest.copyPrettyLink")}
           </MenuShortcut>
         </MenuItem>
         <MenuItem

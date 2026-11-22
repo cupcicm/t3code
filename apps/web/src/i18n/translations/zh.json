@@ -12278,5 +12278,14 @@
   "27d76249d09eb69f": "审查导览已就绪",
   "faa3bb26abb39c93": "审查导览生成失败",
   "b7df38b7d8792d78": "打开导览",
-  "9e91e9a77b664e4e": "无法开始生成审查导览"
+  "9e91e9a77b664e4e": "无法开始生成审查导览",
+  "c4d5e3b2b1d422bc": "复制富文本 PR 链接",
+  "a35bbd3d3032cc21": "复制富文本链接",
+  "cadf0f7395d15317": "复制富文本链接",
+  "a4e4eefa83975171": "复制富文本链接时剪贴板 API 不可用。",
+  "8cd666accbca34a0": "无法将富文本链接复制到剪贴板。",
+  "835cadd86ad04bd6": "复制 {term, select, mr {merge request} cr {change request} other {pull request}} 富文本链接时剪贴板 API 不可用。",
+  "fef9561eac25cc70": "无法将 {term, select, mr {merge request} cr {change request} other {pull request}} 富文本链接复制到剪贴板。",
+  "feba89936ec689d4": "复制 {term, select, mr {MR} cr {change request} other {PR}} 富文本链接失败",
+  "a47f7307baeb45cc": "PR：复制富文本链接"
 }

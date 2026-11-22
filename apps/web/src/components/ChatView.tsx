@@ -54,6 +54,7 @@ import { useProjectScriptEditing } from "./chat/useProjectScriptEditing";
 import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
+import { resolveThreadCurrentPullRequestLink } from "@t3tools/client-runtime/thread-pull-requests";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
@@ -233,7 +234,8 @@ import {
 import { useNowMinute } from "../hooks/useNowMinute";
 import { usePanelAnimationSettings, usePanelPresence } from "../panelAnimations";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
+import { useOpenPanelPullRequest } from "../hooks/useOpenPanelPullRequestUrl";
+import { copyPullRequestPrettyLinkWithToast } from "./pullRequest/pullRequestPrettyLink";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
 import { draftModelSelectionApplies, threadHasStarted } from "../lib/chatThreadActions";
@@ -2402,7 +2404,30 @@ export default function ChatView(props: ChatViewProps) {
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- The scroll-to-bottom button changes the overlay's height without resizing the observed node first.
     showScrollToBottom,
   ]);
-  const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(activeThreadRef);
+  const openPanelPullRequest = useOpenPanelPullRequest(activeThreadRef);
+  const openPanelPullRequestUrl =
+    openPanelPullRequest === undefined ? undefined : (openPanelPullRequest?.url ?? null);
+  const currentThreadPullRequest = resolveThreadCurrentPullRequestLink(
+    activeThread?.pullRequests ?? [],
+  );
+  const activePullRequestPrettyLinkTarget =
+    activeThreadRef === null || !isServerThread
+      ? null
+      : openPanelPullRequest !== undefined
+        ? openPanelPullRequest
+        : currentThreadPullRequest
+          ? {
+              url: currentThreadPullRequest.url,
+              title: currentThreadPullRequest.snapshot?.title ?? null,
+              number: currentThreadPullRequest.number,
+            }
+          : linkedThreadPullRequest
+            ? {
+                url: linkedThreadPullRequest.url,
+                title: null,
+                number: linkedThreadPullRequest.number,
+              }
+            : null;
   const activeThreadReferenceCopyTarget =
     activeThreadRef === null || !isServerThread
       ? null
@@ -2420,6 +2445,10 @@ export default function ChatView(props: ChatViewProps) {
   const copyActiveThreadReference = () => {
     if (activeThreadReferenceCopyTarget === null) return;
     void copyThreadReference(activeThreadReferenceCopyTarget);
+  };
+  const copyActivePullRequestPrettyLink = () => {
+    if (activePullRequestPrettyLinkTarget === null) return;
+    void copyPullRequestPrettyLinkWithToast(activePullRequestPrettyLinkTarget, messages);
   };
   const pullRequestPanelTarget = activeThread
     ? threadPullRequestPanelTarget({
@@ -2822,6 +2851,10 @@ export default function ChatView(props: ChatViewProps) {
       ...threadLifecycleShortcuts,
       "thread.copyReference": ({ event }) => {
         if (!event.repeat) copyActiveThreadReference();
+      },
+      "pullRequest.copyPrettyLink": ({ event }) => {
+        if (activePullRequestPrettyLinkTarget === null) return false;
+        if (!event.repeat) copyActivePullRequestPrettyLink();
       },
       "chat.find": () => {
         if (!isServerThread || serverConfig?.threadFind !== true || activeThreadKey === null)

@@ -2,6 +2,7 @@ import {
   ContextMenuItemSchema,
   ContextMenuSource,
   DesktopAppBrandingSchema,
+  DesktopClipboardWriteInputSchema,
   DesktopEnvironmentBootstrapSchema,
   DesktopMediaReadSchema,
   DesktopThemeSchema,
@@ -458,6 +459,26 @@ export const probeRemoteEditors = DesktopIpc.makeIpcMethod({
       { concurrency: REMOTE_EDITOR_PROBE_CONCURRENCY },
     ).pipe(withPathDirectoryListings);
     return REMOTE_CAPABLE_EDITOR_IDS.filter((_, index) => resolved[index]);
+  }),
+});
+
+export const writeClipboard = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.WRITE_CLIPBOARD_CHANNEL,
+  payload: DesktopClipboardWriteInputSchema,
+  result: Schema.Boolean,
+  handler: Effect.fn("desktop.ipc.window.writeClipboard")(function* (input, event) {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const window = yield* electronWindow.main;
+    if (
+      event === undefined ||
+      Option.isNone(window) ||
+      window.value.isDestroyed() ||
+      window.value.webContents.id !== event.sender.id
+    ) {
+      return false;
+    }
+    const shell = yield* ElectronShell.ElectronShell;
+    return yield* shell.writeClipboard(input);
   }),
 });
 

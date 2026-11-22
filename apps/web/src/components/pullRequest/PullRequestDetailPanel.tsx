@@ -96,6 +96,7 @@ import { PullRequestDetailGhost, PullRequestTimelineGhost } from "./PullRequestG
 import { PullRequestCopyableCode } from "./PullRequestCopyableCode";
 import { pullRequestRefKey, usePullRequestDetail } from "./usePullRequestDetail";
 import { PullRequestActionsMenu } from "./PullRequestActionsMenu";
+import { copyPullRequestPrettyLinkWithToast } from "./pullRequestPrettyLink";
 import {
   PullRequestApproveWorkflowsButton,
   PullRequestCheckoutMenu,
@@ -616,23 +617,37 @@ export function PullRequestDetailPanel({
         description: error.message,
       }),
   });
+  const copyPrettyLink = (target: {
+    readonly url: string;
+    readonly title: string;
+    readonly number: number;
+  }) => {
+    void copyPullRequestPrettyLinkWithToast({ ...target, terminology }, resolve);
+  };
   const copyFromShortcut = useEffectEvent((event: KeyboardEvent) => {
     if (!shortcutsEnabled || event.defaultPrevented || isCommandPaletteOpen()) return;
     const command = resolveShortcutCommand(event, keybindings, {
       context: getShortcutContext(),
     });
-    if (command !== "pullRequest.copyNumber") return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (!event.repeat)
-      copyReference(
-        `#${reference.number}`,
-        m(
-          msg("Failed to copy {term, select, mr {MR} cr {change request} other {PR}} number", {
-            term: changeRequestTermKind(terminology),
-          }),
-        ),
-      );
+    if (command === "pullRequest.copyNumber") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!event.repeat)
+        copyReference(
+          `#${reference.number}`,
+          m(
+            msg("Failed to copy {term, select, mr {MR} cr {change request} other {PR}} number", {
+              term: changeRequestTermKind(terminology),
+            }),
+          ),
+        );
+      return;
+    }
+    if (command === "pullRequest.copyPrettyLink" && handoffSummary !== null) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!event.repeat) copyPrettyLink(handoffSummary);
+    }
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window keydown capture listener for the copy-number shortcut
   useEffect(() => {
@@ -1672,6 +1687,7 @@ export function PullRequestDetailPanel({
                 perform={perform}
                 openOnHostText={openOnHostText}
                 copyReference={copyReference}
+                copyPrettyLink={() => copyPrettyLink(detail)}
               />
             </TooltipProvider>
           ) : null}

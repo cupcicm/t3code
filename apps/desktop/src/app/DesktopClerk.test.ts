@@ -62,6 +62,7 @@ const layerDesktopClerk = (
     openExternal: () => Effect.succeed(true),
     openSystemSettings: () => Effect.succeed(false),
     copyText: () => Effect.void,
+    writeClipboard: () => Effect.succeed(true),
   },
   listeners = new Map<string, (...args: unknown[]) => void>(),
 ) => {
@@ -389,6 +390,7 @@ it.effect.each(["startup", "open-url", "early-second-instance"] as const)(
           }),
         openSystemSettings: () => Effect.succeed(false),
         copyText: () => Effect.void,
+        writeClipboard: () => Effect.succeed(true),
       });
       const listeners = new Map<string, (...args: unknown[]) => void>();
       const electronApp = {

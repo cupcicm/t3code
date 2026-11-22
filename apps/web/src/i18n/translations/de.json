@@ -12253,5 +12253,14 @@
   "27d76249d09eb69f": "Review-Leitfaden bereit",
   "faa3bb26abb39c93": "Review-Leitfaden fehlgeschlagen",
   "b7df38b7d8792d78": "Leitfaden öffnen",
-  "9e91e9a77b664e4e": "Review-Leitfaden konnte nicht gestartet werden"
+  "9e91e9a77b664e4e": "Review-Leitfaden konnte nicht gestartet werden",
+  "c4d5e3b2b1d422bc": "Formatierten PR-Link kopieren",
+  "a35bbd3d3032cc21": "Formatierten Link kopieren",
+  "cadf0f7395d15317": "Formatierten Link kopieren",
+  "a4e4eefa83975171": "Die Zwischenablage-API ist beim Kopieren des formatierten Links nicht verfügbar.",
+  "8cd666accbca34a0": "Der formatierte Link konnte nicht in die Zwischenablage kopiert werden.",
+  "835cadd86ad04bd6": "{term, select, mr {Die Zwischenablage-API ist beim Kopieren des formatierten Merge Request-Links nicht verfügbar.} cr {Die Zwischenablage-API ist beim Kopieren des formatierten Änderungsanfrage-Links nicht verfügbar.} other {Die Zwischenablage-API ist beim Kopieren des formatierten Pull Request-Links nicht verfügbar.}}",
+  "fef9561eac25cc70": "{term, select, mr {Der formatierte Merge Request-Link konnte nicht in die Zwischenablage kopiert werden.} cr {Der formatierte Änderungsanfrage-Link konnte nicht in die Zwischenablage kopiert werden.} other {Der formatierte Pull Request-Link konnte nicht in die Zwischenablage kopiert werden.}}",
+  "feba89936ec689d4": "{term, select, mr {Formatierter MR-Link konnte nicht kopiert werden} cr {Formatierter Änderungsanfrage-Link konnte nicht kopiert werden} other {Formatierter PR-Link konnte nicht kopiert werden}}",
+  "a47f7307baeb45cc": "Pull Request: Formatierten Link kopieren"
 }
