@@ -26,6 +26,8 @@ const openNumberContextMenu = (event: ReactMouseEvent, detail: CrumbsPullRequest
   event.stopPropagation();
   void showPullRequestLinkContextMenu({
     url: detail.url,
+    title: detail.title,
+    number: detail.number,
     openLabel: openOnHostLabel(sourceControlClients.get(detail.provider)),
     position: { x: event.clientX, y: event.clientY },
   });

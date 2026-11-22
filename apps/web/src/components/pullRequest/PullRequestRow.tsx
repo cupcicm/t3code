@@ -150,6 +150,8 @@ function PullRequestRowImpl({
                 event.stopPropagation();
                 void showPullRequestLinkContextMenu({
                   url: entry.url,
+                  title: entry.title,
+                  number: entry.number,
                   openLabel: openOnHostLabel(sourceControlClients.get(entry.provider)),
                   position: { x: event.clientX, y: event.clientY },
                 });

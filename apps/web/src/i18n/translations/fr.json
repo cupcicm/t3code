@@ -12258,5 +12258,14 @@
   "27d76249d09eb69f": "Guide de revue prêt",
   "faa3bb26abb39c93": "Échec du guide de revue",
   "b7df38b7d8792d78": "Ouvrir le guide",
-  "9e91e9a77b664e4e": "Impossible de démarrer un guide de revue"
+  "9e91e9a77b664e4e": "Impossible de démarrer un guide de revue",
+  "c4d5e3b2b1d422bc": "Copier le lien mis en forme de la PR",
+  "a35bbd3d3032cc21": "Copier le lien mis en forme",
+  "cadf0f7395d15317": "Copier le lien mis en forme",
+  "a4e4eefa83975171": "L’API Presse-papiers n’est pas disponible pour copier le lien mis en forme.",
+  "8cd666accbca34a0": "Impossible de copier le lien mis en forme dans le presse-papiers.",
+  "835cadd86ad04bd6": "L’API Presse-papiers n’est pas disponible pour copier le lien mis en forme de la {term, select, mr {merge request} cr {demande de modification} other {pull request}}.",
+  "fef9561eac25cc70": "Impossible de copier le lien mis en forme de la {term, select, mr {merge request} cr {demande de modification} other {pull request}} dans le presse-papiers.",
+  "feba89936ec689d4": "Impossible de copier le lien mis en forme de la {term, select, mr {MR} cr {demande de modification} other {PR}}",
+  "a47f7307baeb45cc": "Pull request : copier le lien mis en forme"
 }

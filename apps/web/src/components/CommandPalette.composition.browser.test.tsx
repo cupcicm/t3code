@@ -65,7 +65,10 @@ vi.mock("../hooks/useHandleNewThread", () => ({
   }),
   useNewThreadHandler: () => async () => undefined,
 }));
-vi.mock("../hooks/useOpenPanelPullRequestUrl", () => ({ useOpenPanelPullRequestUrl: () => null }));
+vi.mock("../hooks/useOpenPanelPullRequestUrl", () => ({
+  useOpenPanelPullRequest: () => null,
+  useOpenPanelPullRequestUrl: () => null,
+}));
 vi.mock("../connection/useDesktopLocalBootstraps", () => ({ useDesktopLocalBootstraps: () => [] }));
 vi.mock("../state/use-atom-command", () => ({
   // The add-project destination step starts a clone and follows its project id.

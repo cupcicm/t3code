@@ -12253,5 +12253,14 @@
   "27d76249d09eb69f": "Guía de revisión lista",
   "faa3bb26abb39c93": "Falló la guía de revisión",
   "b7df38b7d8792d78": "Abrir guía",
-  "9e91e9a77b664e4e": "No se pudo iniciar una guía de revisión"
+  "9e91e9a77b664e4e": "No se pudo iniciar una guía de revisión",
+  "c4d5e3b2b1d422bc": "Copiar enlace con formato de la PR",
+  "a35bbd3d3032cc21": "Copiar enlace con formato",
+  "cadf0f7395d15317": "Copiar enlace con formato",
+  "a4e4eefa83975171": "La API del portapapeles no está disponible al copiar el enlace con formato.",
+  "8cd666accbca34a0": "No se pudo copiar el enlace con formato al portapapeles.",
+  "835cadd86ad04bd6": "La API del portapapeles no está disponible al copiar el enlace con formato de la {term, select, mr {merge request} cr {solicitud de cambios} other {pull request}}.",
+  "fef9561eac25cc70": "No se pudo copiar el enlace con formato de la {term, select, mr {merge request} cr {solicitud de cambios} other {pull request}} al portapapeles.",
+  "feba89936ec689d4": "No se pudo copiar el enlace con formato de la {term, select, mr {MR} cr {solicitud de cambios} other {PR}}",
+  "a47f7307baeb45cc": "Pull request: copiar enlace con formato"
 }

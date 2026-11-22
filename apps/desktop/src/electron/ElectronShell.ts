@@ -3,6 +3,7 @@ import {
   isLocalEditorFileUrl,
   REMOTE_CAPABLE_EDITOR_IDS,
   remoteSchemeForEditor,
+  type DesktopClipboardWriteInput,
   type SystemSettingsPane,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -73,6 +74,7 @@ export class ElectronShell extends Context.Service<
     readonly openExternal: (rawUrl: unknown) => Effect.Effect<boolean>;
     readonly openSystemSettings: (pane: SystemSettingsPane) => Effect.Effect<boolean>;
     readonly copyText: (text: string) => Effect.Effect<void>;
+    readonly writeClipboard: (input: DesktopClipboardWriteInput) => Effect.Effect<boolean>;
   }
 >()("@t3tools/desktop/electron/ElectronShell") {}
 
@@ -100,6 +102,23 @@ export const make = ElectronShell.of({
   }),
   copyText: Effect.fn("ElectronShell.copyText")(function (text) {
     return Effect.promise(() => Electron.clipboard.writeText(text).catch(() => undefined));
+  }),
+  writeClipboard: Effect.fn("ElectronShell.writeClipboard")(function (input) {
+    return Effect.promise(() => {
+      const items: Record<string, Blob> = {
+        "text/plain": new Blob([input.text], { type: "text/plain" }),
+      };
+      if (input.html !== undefined) {
+        items["text/html"] = new Blob([input.html], { type: "text/html" });
+      }
+      if (input.rtf !== undefined) {
+        items["text/rtf"] = new Blob([input.rtf], { type: "text/rtf" });
+      }
+      return Electron.clipboard.write([new Electron.ClipboardItem(items)]).then(
+        () => true,
+        () => false,
+      );
+    });
   }),
 });
 

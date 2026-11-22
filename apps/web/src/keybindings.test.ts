@@ -885,6 +885,37 @@ describe("composer and pull request shortcuts", () => {
     }
   });
 
+  it("binds pullRequest.copyPrettyLink to Cmd+Ctrl+C on macOS without hijacking Ctrl+C elsewhere", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "c", metaKey: true, ctrlKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "MacIntel" },
+      ),
+      "pullRequest.copyPrettyLink",
+    );
+    assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_RESOLVED_KEYBINDINGS, "pullRequest.copyPrettyLink", {
+        platform: "MacIntel",
+      }),
+      "⌃⌘C",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "c", ctrlKey: true }), DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Win32",
+      }),
+      null,
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "c", metaKey: true, ctrlKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "Win32" },
+      ),
+      "pullRequest.copyPrettyLink",
+    );
+  });
+
   it.each(["MacIntel", "Win32", "Linux"])(
     "reserves the alternate send chord for the focused composer on %s",
     (platform) => {

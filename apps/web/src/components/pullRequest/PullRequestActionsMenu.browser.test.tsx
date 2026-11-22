@@ -41,6 +41,7 @@ type Detail = Parameters<typeof PullRequestActionsMenu>[0]["detail"];
 
 const openDetail: Detail = {
   url: "https://github.com/owner/repo/pull/7",
+  title: "Fix copy pretty link",
   state: "open",
   isDraft: false,
   headBranch: "feature",
@@ -66,7 +67,7 @@ const openDetail: Detail = {
   },
 };
 
-function setup() {
+function setup(overrides: { copyPrettyLink?: () => void } = {}) {
   mocks.update.mockReset().mockResolvedValue({ _tag: "Success" });
   mocks.notify.mockReset();
   return (detail: Detail = openDetail) => (
@@ -113,6 +114,7 @@ function setup() {
       perform={async () => true}
       openOnHostText="Open on GitHub"
       copyReference={() => {}}
+      copyPrettyLink={overrides.copyPrettyLink ?? (() => {})}
     />
   );
 }

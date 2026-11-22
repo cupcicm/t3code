@@ -46,6 +46,7 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { openLinkPullRequestDialog } from "./LinkPullRequestDialog";
+import { copyPullRequestPrettyLinkWithToast } from "./pullRequestPrettyLink";
 import {
   PULL_REQUEST_ROW_CLASS,
   PULL_REQUEST_ROW_NUMBER_CLASS,
@@ -367,6 +368,19 @@ function LinkRowImpl({
             >
               <LinkIcon className="size-3.5" />
               <T>Copy link</T>
+            </MenuItem>
+            <MenuItem
+              onClick={() =>
+                void copyPullRequestPrettyLinkWithToast({
+                  url: link.url,
+                  title: snapshot?.title ?? null,
+                  number: link.number,
+                  terminology: linkHost.changeRequest,
+                })
+              }
+            >
+              <LinkIcon className="size-3.5" />
+              <T>Copy pretty link</T>
             </MenuItem>
             <MenuItem onClick={(event) => openPrLink(event, link.url, threadRef)}>
               <ArrowUpRightIcon className="size-3.5" />

@@ -12265,5 +12265,14 @@
   "27d76249d09eb69f": "Granskningsguiden är klar",
   "faa3bb26abb39c93": "Granskningsguiden misslyckades",
   "b7df38b7d8792d78": "Öppna guiden",
-  "9e91e9a77b664e4e": "Kunde inte starta en granskningsguide"
+  "9e91e9a77b664e4e": "Kunde inte starta en granskningsguide",
+  "c4d5e3b2b1d422bc": "Kopiera formaterad PR-länk",
+  "a35bbd3d3032cc21": "Kopiera formaterad länk",
+  "cadf0f7395d15317": "Kopiera formaterad länk",
+  "a4e4eefa83975171": "Urklipps-API:t är inte tillgängligt vid kopiering av den formaterade länken.",
+  "8cd666accbca34a0": "Kunde inte kopiera den formaterade länken till urklipp.",
+  "835cadd86ad04bd6": "Urklipps-API:t är inte tillgängligt vid kopiering av den formaterade länken till {term, select, mr {merge requesten} cr {ändringsbegäran} other {pull requesten}}.",
+  "fef9561eac25cc70": "Kunde inte kopiera den formaterade länken till {term, select, mr {merge requesten} cr {ändringsbegäran} other {pull requesten}} till urklipp.",
+  "feba89936ec689d4": "Kunde inte kopiera den formaterade länken till {term, select, mr {MR:en} cr {ändringsbegäran} other {PR:en}}",
+  "a47f7307baeb45cc": "Pull request: kopiera formaterad länk"
 }

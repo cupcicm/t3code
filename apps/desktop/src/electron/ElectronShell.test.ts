@@ -2,9 +2,10 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { beforeEach, vi } from "vite-plus/test";
 
-const { openExternalMock, writeTextMock } = vi.hoisted(() => ({
+const { openExternalMock, writeTextMock, writeMock } = vi.hoisted(() => ({
   openExternalMock: vi.fn(),
   writeTextMock: vi.fn(),
+  writeMock: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
@@ -13,6 +14,13 @@ vi.mock("electron", () => ({
   },
   clipboard: {
     writeText: writeTextMock,
+    write: writeMock,
+  },
+  ClipboardItem: class {
+    readonly items: Record<string, Blob>;
+    constructor(items: Record<string, Blob>) {
+      this.items = items;
+    }
   },
 }));
 
@@ -22,6 +30,7 @@ describe("ElectronShell", () => {
   beforeEach(() => {
     openExternalMock.mockReset();
     writeTextMock.mockReset();
+    writeMock.mockReset();
   });
 
   it.effect("opens remote SSH editor URLs", () =>
@@ -188,6 +197,45 @@ describe("ElectronShell", () => {
 
       assert.equal(result, false);
       assert.equal(openExternalMock.mock.calls.length, 0);
+    }).pipe(Effect.provide(ElectronShell.layer)),
+  );
+
+  it.effect("writes plain, HTML, and RTF flavors atomically to the clipboard", () =>
+    Effect.gen(function* () {
+      writeMock.mockResolvedValue(undefined);
+      const electronShell = yield* ElectronShell.ElectronShell;
+      const result = yield* electronShell.writeClipboard({
+        text: ":pr: [Fix bug](https://github.com/org/repo/pull/42)",
+        html: ':pr: <a href="https://github.com/org/repo/pull/42">Fix bug</a>',
+        rtf: '{\\rtf1\\ansi :pr: {\\field{\\*\\fldinst{HYPERLINK "https://github.com/org/repo/pull/42"}}{\\fldrslt Fix bug}}}',
+      });
+
+      assert.equal(result, true);
+      assert.equal(writeMock.mock.calls.length, 1);
+      const written = writeMock.mock.calls[0]?.[0] as Array<{ items: Record<string, Blob> }>;
+      assert.equal(written.length, 1);
+      assert.equal(
+        yield* Effect.promise(() => written[0]!.items["text/plain"]!.text()),
+        ":pr: [Fix bug](https://github.com/org/repo/pull/42)",
+      );
+      assert.equal(
+        yield* Effect.promise(() => written[0]!.items["text/html"]!.text()),
+        ':pr: <a href="https://github.com/org/repo/pull/42">Fix bug</a>',
+      );
+      assert.equal(
+        yield* Effect.promise(() => written[0]!.items["text/rtf"]!.text()),
+        '{\\rtf1\\ansi :pr: {\\field{\\*\\fldinst{HYPERLINK "https://github.com/org/repo/pull/42"}}{\\fldrslt Fix bug}}}',
+      );
+    }).pipe(Effect.provide(ElectronShell.layer)),
+  );
+
+  it.effect("returns false when writing clipboard flavors fails", () =>
+    Effect.gen(function* () {
+      writeMock.mockRejectedValue(new Error("clipboard busy"));
+      const electronShell = yield* ElectronShell.ElectronShell;
+      const result = yield* electronShell.writeClipboard({ text: "hello" });
+
+      assert.equal(result, false);
     }).pipe(Effect.provide(ElectronShell.layer)),
   );
 });
