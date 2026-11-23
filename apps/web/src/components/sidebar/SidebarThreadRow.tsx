@@ -578,6 +578,8 @@ type SidebarThreadRowProps = {
   // "folder-multiline" adds the card's branch and PR line under it.
   variant: "card" | "slim" | "folder" | "folder-multiline";
   navigationParent?: string | undefined;
+  sidebarRowId?: string | undefined;
+  hideIssueBadge?: boolean | undefined;
   variantAction: SidebarSweepAction;
   settlementSupported: boolean;
   snoozeSupported: boolean;
@@ -1132,11 +1134,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         onOpenPullRequest={handlePrClick}
       />
     ) : null;
-  const firstIssue = thread.issues?.[0];
-  const issueCount = thread.issues?.length ?? 0;
+  const firstIssue = props.hideIssueBadge ? undefined : thread.issues?.[0];
+  const issueCount = firstIssue ? (thread.issues?.length ?? 0) : 0;
   const issueState = useSidebarLinkedIssueState(
     thread.environmentId,
-    leaseLiveStatus ? thread.issues : undefined,
+    leaseLiveStatus && !props.hideIssueBadge ? thread.issues : undefined,
   );
   const issueStatus = issueState === null ? null : issueStatePresentation(issueState);
   const IssueIcon = issueStatus?.Icon ?? IssueGlyph.issue;
@@ -1344,7 +1346,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 ref={rowRef}
                 role="button"
                 tabIndex={0}
-                data-sidebar-row={threadKey}
+                data-sidebar-row={props.sidebarRowId ?? threadKey}
                 data-sidebar-parent={props.navigationParent}
                 aria-label={accessibility.label}
                 aria-current={accessibility.current}
@@ -1550,7 +1552,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               ref={rowRef}
               role="button"
               tabIndex={0}
-              data-sidebar-row={threadKey}
+              data-sidebar-row={props.sidebarRowId ?? threadKey}
               data-sidebar-parent={props.navigationParent}
               aria-label={accessibility.label}
               aria-current={accessibility.current}

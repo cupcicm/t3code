@@ -9,11 +9,13 @@ import type {
   ScopedThreadRef,
   ThreadId,
 } from "@t3tools/contracts";
-import { Link2Icon, Link2OffIcon, MessageSquareIcon } from "lucide-react";
+import { Link2Icon, Link2OffIcon, MessageSquareIcon, SquarePenIcon } from "lucide-react";
 import { msg, T, useGT } from "gt-react";
 import { useState } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
+import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { m } from "~/i18n/messages";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import {
@@ -57,6 +59,7 @@ export function IssueThreadLinks({
     useServerConfigs().get(environmentId)?.environment.capabilities.issueLinkedThreads === true;
   const link = useAtomCommand(threadEnvironment.linkIssue, { reportFailure: false });
   const unlink = useAtomCommand(threadEnvironment.unlinkIssue, { reportFailure: false });
+  const handleNewThread = useNewThreadHandler();
   const hiddenKeys = useAtomValue(environmentThreadShells.hiddenThreadKeysAtom);
   const hidingAnywhere = useAnyEnvironmentHiding();
   const loadedThreadRefs = useEnvironmentThreadRefs(environmentId);
@@ -156,38 +159,68 @@ export function IssueThreadLinks({
         </Tooltip>
       ) : null}
       {canOperate ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                aria-label={linkedHere ? gt("Unlink from thread") : gt("Link to thread")}
-                aria-pressed={thread === null ? undefined : linkedHere}
-                disabled={pending}
-                onClick={() => {
-                  if (thread === null) setPickerOpen(true);
-                  else void changeLink(thread.id, linkedHere);
-                }}
-              />
-            }
-          >
-            {linkedHere ? (
-              <Link2OffIcon aria-hidden className="size-3.5" />
-            ) : (
-              <Link2Icon aria-hidden className="size-3.5" />
-            )}
-          </TooltipTrigger>
-          <TooltipPopup>
-            {linkedHere ? (
-              <T>Unlink from this thread</T>
-            ) : thread === null ? (
-              gt("Link to thread")
-            ) : (
-              <T>Link to this thread</T>
-            )}
-          </TooltipPopup>
-        </Tooltip>
+        <>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={gt("New thread in {issue}", { issue: issue.displayKey })}
+                  onClick={() => {
+                    void handleNewThread(scopeProjectRef(environmentId, reference.projectId), {
+                      linkedIssue: {
+                        tracker: reference.tracker,
+                        host: reference.host,
+                        scope: reference.scope,
+                        key: reference.key,
+                        projectId: reference.projectId,
+                        url: issue.url,
+                        displayKey: issue.displayKey,
+                        title: issue.title,
+                      },
+                    });
+                  }}
+                />
+              }
+            >
+              <SquarePenIcon aria-hidden className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup>{gt("New thread in {issue}", { issue: issue.displayKey })}</TooltipPopup>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={linkedHere ? gt("Unlink from thread") : gt("Link to thread")}
+                  aria-pressed={thread === null ? undefined : linkedHere}
+                  disabled={pending}
+                  onClick={() => {
+                    if (thread === null) setPickerOpen(true);
+                    else void changeLink(thread.id, linkedHere);
+                  }}
+                />
+              }
+            >
+              {linkedHere ? (
+                <Link2OffIcon aria-hidden className="size-3.5" />
+              ) : (
+                <Link2Icon aria-hidden className="size-3.5" />
+              )}
+            </TooltipTrigger>
+            <TooltipPopup>
+              {linkedHere ? (
+                <T>Unlink from this thread</T>
+              ) : thread === null ? (
+                gt("Link to thread")
+              ) : (
+                <T>Link to this thread</T>
+              )}
+            </TooltipPopup>
+          </Tooltip>
+        </>
       ) : null}
       {pickerOpen ? (
         <Dialog open onOpenChange={setPickerOpen}>

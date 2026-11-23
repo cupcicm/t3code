@@ -160,6 +160,18 @@ Pinned threads stay above the folders, and Snoozed and Settled stay below them. 
 can drag a thread onto the composer to mention it, but not within the sidebar, and the Working
 section is off. Each device keeps its own choice.
 
+### Group threads by issue
+
+Switch to the issue view from the sidebar header, **Settings → General → Sidebar view**, or the
+command palette to group active threads under the issues they are linked to. A thread linked to
+more than one issue appears under each of them, and active threads with no linked issue collect
+under **No issue**. Pinned threads stay above the issue folders, and Snoozed and Settled stay
+below them.
+
+Use an issue folder's new-thread action (or its context menu) to open a draft already linked to
+that issue, and use its pull-requests action to see every pull request linked to that issue's
+threads alongside pull requests found on the host for the issue key (such as `[ENG-123]`).
+
 ## Settle finished work
 
 Choose **Settle thread** from its menu to move finished work out of the active list

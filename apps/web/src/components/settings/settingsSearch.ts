@@ -488,6 +488,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("hide fold running monitoring threads inbox sidebar shelf")],
   },
   {
+    id: "sidebar-view-mode",
+    title: msg("Sidebar view"),
+    to: "/settings/general",
+    searchTerms: [msg("issues group threads hierarchy linear github pull requests sidebar")],
+  },
+  {
     id: "boring-sidebar",
     title: msg("Boring sidebar (group by project)"),
     to: "/settings/labs",

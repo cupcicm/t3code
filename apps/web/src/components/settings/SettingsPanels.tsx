@@ -24,6 +24,7 @@ import {
   type ResponseStreamingMode,
   type QuitConfirmationMode,
   SidebarProjectSortOrder,
+  SidebarViewMode,
   ScreenReaderAnnouncements,
   ToolCallVisibility,
 } from "@t3tools/contracts/settings";
@@ -148,6 +149,12 @@ const SIDEBAR_PROJECT_SORT_ORDER_LABELS: Record<SidebarProjectSortOrder, string>
   manual: msg("Manual"),
 };
 const isSidebarProjectSortOrder = Schema.is(SidebarProjectSortOrder);
+
+const SIDEBAR_VIEW_MODE_LABELS: Record<SidebarViewMode, string> = {
+  threads: msg("Threads", { $context: "sidebar view mode" }),
+  issues: msg("Issues", { $context: "sidebar view mode" }),
+};
+const isSidebarViewMode = Schema.is(SidebarViewMode);
 
 const TIMESTAMP_FORMAT_LABELS = {
   locale: msg("System default"),
@@ -532,6 +539,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
       ? [gt("Working section")]
       : []),
+    ...(settings.sidebarViewMode !== DEFAULT_UNIFIED_SETTINGS.sidebarViewMode
+      ? [gt("Sidebar view")]
+      : []),
     ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
       ? [gt("Auto-settle inactive threads")]
       : []),
@@ -723,6 +733,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
+      sidebarViewMode: DEFAULT_UNIFIED_SETTINGS.sidebarViewMode,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
@@ -967,6 +978,48 @@ export function GeneralSettingsPanel() {
               }
               aria-label={gt("Working section")}
             />
+          }
+        />
+        <SettingsRow
+          {...setting("sidebar-view-mode")}
+          description={
+            <T>
+              Group active sidebar threads by their linked issues, with quick access to new threads
+              and pull requests for each issue.
+            </T>
+          }
+          resetAction={
+            settings.sidebarViewMode !== DEFAULT_UNIFIED_SETTINGS.sidebarViewMode ? (
+              <SettingResetButton
+                ariaLabel={gt("Reset sidebar view to default")}
+                onClick={() =>
+                  updateSettings({
+                    sidebarViewMode: DEFAULT_UNIFIED_SETTINGS.sidebarViewMode,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.sidebarViewMode}
+              onValueChange={(value) => {
+                if (isSidebarViewMode(value)) {
+                  updateSettings({ sidebarViewMode: value });
+                }
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-44" aria-label={gt("Sidebar view")}>
+                <SelectValue>{m(SIDEBAR_VIEW_MODE_LABELS[settings.sidebarViewMode])}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {SidebarViewMode.literals.map((mode) => (
+                  <SelectItem hideIndicator key={mode} value={mode}>
+                    {m(SIDEBAR_VIEW_MODE_LABELS[mode])}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
           }
         />
       </SettingsSection>
