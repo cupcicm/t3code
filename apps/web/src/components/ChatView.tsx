@@ -251,6 +251,7 @@ import {
   composerDraftHasUserContent,
   type ComposerFileAttachment,
   type ComposerImageAttachment,
+  type DraftLinkedIssue,
   type DraftThreadEnvMode,
   useComposerDraftStore,
   DraftId,
@@ -1277,12 +1278,36 @@ export default function ChatView(props: ChatViewProps) {
   });
 
   const pullRequestLinking = usePullRequestLinking(environmentId);
+  const linkIssueCommand = useAtomCommand(threadEnvironment.linkIssue, { reportFailure: false });
   // Best effort: the thread already exists, so a failed link is only logged.
   const linkCheckoutPullRequest = useStableCallback((threadRef: ScopedThreadRef, url: string) => {
     pullRequestLinking.changeLink(threadRef, url, true).catch((error: unknown) => {
       console.warn("Failed to link the checked-out pull request to its thread.", error);
     });
   });
+  const linkDraftIssue = useStableCallback(
+    (threadRef: ScopedThreadRef, issue: DraftLinkedIssue) => {
+      void linkIssueCommand({
+        environmentId: threadRef.environmentId,
+        input: {
+          threadId: threadRef.threadId,
+          tracker: issue.tracker,
+          host: issue.host,
+          scope: issue.scope,
+          key: issue.key,
+          projectId: issue.projectId,
+          url: issue.url,
+          displayKey: issue.displayKey,
+          title: issue.title,
+          source: "manual",
+        },
+      }).then((result) => {
+        if (result._tag === "Failure") {
+          console.warn("Failed to link the draft issue to its thread.", result.cause);
+        }
+      });
+    },
+  );
   const { handlePreparedPullRequestThreadStable, openPullRequestDialogStable } =
     usePullRequestDraftThread({
       routeKind,
@@ -3109,6 +3134,7 @@ export default function ChatView(props: ChatViewProps) {
     handleNewThreadInActiveProject,
     persistThreadSettingsForNextTurn,
     linkCheckoutPullRequest,
+    linkDraftIssue,
   });
 
   const onWorktreeSetupWorkLocally = () => {

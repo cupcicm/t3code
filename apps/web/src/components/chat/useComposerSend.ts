@@ -78,6 +78,7 @@ import {
   composerDraftHasUserContent,
   type ComposerFileAttachment,
   type ComposerImageAttachment,
+  type DraftLinkedIssue,
   type DraftThreadEnvMode,
   useComposerDraftStore,
   DraftId,
@@ -287,6 +288,7 @@ interface ComposerSendInput {
   }) => Promise<AtomCommandResult<void, unknown>>;
   /** Links a checked-out pull request to its thread; best effort, failures only logged. */
   readonly linkCheckoutPullRequest: (threadRef: ScopedThreadRef, url: string) => void;
+  readonly linkDraftIssue: (threadRef: ScopedThreadRef, issue: DraftLinkedIssue) => void;
 }
 
 /**
@@ -369,6 +371,7 @@ export function useComposerSend(input: ComposerSendInput) {
     handleNewThreadInActiveProject,
     persistThreadSettingsForNextTurn,
     linkCheckoutPullRequest,
+    linkDraftIssue,
   } = input;
   const linkedEnvironments = useLinkedEnvironments(environmentId);
   const handleNewThread = useNewThreadHandler();
@@ -1471,11 +1474,14 @@ export function useComposerSend(input: ComposerSendInput) {
           : null;
       // Read the live session, not the render snapshot: the draft is finalized away once the
       // thread exists.
+      const liveDraftSession =
+        isLocalDraftThread && draftId !== null
+          ? useComposerDraftStore.getState().getDraftSession(draftId)
+          : null;
       const checkoutPullRequestUrl = isLocalDraftThread
-        ? checkoutPullRequestUrlToLink(
-            draftId === null ? null : useComposerDraftStore.getState().getDraftSession(draftId),
-          )
+        ? checkoutPullRequestUrlToLink(liveDraftSession)
         : null;
+      const linkedIssueToAttach = liveDraftSession?.linkedIssue ?? null;
       if (backgroundThreadRef) beginBackgroundDraftSubmissionByRef(backgroundThreadRef);
       const startPromise = startThreadTurn({
         environmentId,
@@ -1505,14 +1511,14 @@ export function useComposerSend(input: ComposerSendInput) {
       if (backgroundThreadRef) {
         try {
           backgroundDraftOpened = Boolean(
-            await handleNewThread(
-              scopeProjectRef(activeProject.environmentId, activeProject.id),
-              resolveBackgroundDraftWorkspaceOptions({
+            await handleNewThread(scopeProjectRef(activeProject.environmentId, activeProject.id), {
+              ...resolveBackgroundDraftWorkspaceOptions({
                 envMode: sendEnvMode,
                 branch: activeThreadBranch,
                 startFromOrigin,
               }),
-            ),
+              ...(linkedIssueToAttach ? { linkedIssue: linkedIssueToAttach } : {}),
+            }),
           );
         } catch (error) {
           clearBackgroundDraftSubmissionByRef(backgroundThreadRef);
@@ -1535,6 +1541,9 @@ export function useComposerSend(input: ComposerSendInput) {
             scopeThreadRef(environmentId, threadIdForSend),
             checkoutPullRequestUrl,
           );
+        }
+        if (linkedIssueToAttach) {
+          linkDraftIssue(scopeThreadRef(environmentId, threadIdForSend), linkedIssueToAttach);
         }
         setKeepFullHistory(routeThreadKey, false);
         if (freshArm !== undefined) disarmFreshSession(routeThreadKey, freshArm);

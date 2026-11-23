@@ -9,6 +9,7 @@ import {
   composerDraftHasUserContent,
   markPromotedDraftThreadByRef,
   type DraftId,
+  type DraftLinkedIssue,
   type DraftThreadEnvMode,
   type DraftThreadState,
   useComposerDraftStore,
@@ -102,6 +103,7 @@ export function createNewThreadHandler(router: AnyRouter) {
       replace?: boolean;
       /** Composer text for the draft, set before it shows. A draft with user text keeps it. */
       prompt?: string;
+      linkedIssue?: DraftLinkedIssue | null;
     },
   ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
     const projects = readProjects();
@@ -317,9 +319,14 @@ export function createNewThreadHandler(router: AnyRouter) {
             }),
           };
         }
-        if (workspaceContext) {
+        if (workspaceContext || options?.linkedIssue !== undefined) {
           setDraftThreadContext(emptyStoredDraftThread.draftId, {
             ...workspaceContext,
+            ...(options?.linkedIssue !== undefined
+              ? { linkedIssue: options.linkedIssue }
+              : !isDraftAlreadyOpen
+                ? { linkedIssue: null }
+                : {}),
             ...(!isDraftAlreadyOpen ? { runtimeMode: defaultRuntimeMode } : {}),
             ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
           });
@@ -345,6 +352,11 @@ export function createNewThreadHandler(router: AnyRouter) {
           {
             threadId: emptyStoredDraftThread.threadId,
             ...workspaceContext,
+            ...(options?.linkedIssue !== undefined
+              ? { linkedIssue: options.linkedIssue }
+              : !isDraftAlreadyOpen
+                ? { linkedIssue: null }
+                : {}),
             ...(!isDraftAlreadyOpen ? { runtimeMode: defaultRuntimeMode } : {}),
             ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
           },
@@ -381,9 +393,13 @@ export function createNewThreadHandler(router: AnyRouter) {
         hasBranchOption ||
         hasWorktreePathOption ||
         hasEnvModeOption ||
-        hasStartFromOriginOption
+        hasStartFromOriginOption ||
+        options?.linkedIssue !== undefined
       ) {
-        setDraftThreadContext(currentRouteTarget.draftId, pickExplicitWorkspaceOptions(options));
+        setDraftThreadContext(currentRouteTarget.draftId, {
+          ...pickExplicitWorkspaceOptions(options),
+          ...(options?.linkedIssue !== undefined ? { linkedIssue: options.linkedIssue } : {}),
+        });
       }
       setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, currentRouteTarget.draftId, {
         threadId: latestActiveDraftThread.threadId,
@@ -391,6 +407,7 @@ export function createNewThreadHandler(router: AnyRouter) {
         runtimeMode: latestActiveDraftThread.runtimeMode,
         interactionMode: latestActiveDraftThread.interactionMode,
         ...pickExplicitWorkspaceOptions(options),
+        ...(options?.linkedIssue !== undefined ? { linkedIssue: options.linkedIssue } : {}),
       });
       seedPrompt(currentRouteTarget.draftId);
       return Promise.resolve({
@@ -420,6 +437,7 @@ export function createNewThreadHandler(router: AnyRouter) {
           runtimeMode: racedDraft.runtimeMode,
           interactionMode: racedDraft.interactionMode,
           ...pickExplicitWorkspaceOptions(options),
+          ...(options?.linkedIssue !== undefined ? { linkedIssue: options.linkedIssue } : {}),
         });
         seedPrompt(racedDraft.draftId);
         await router.navigate({
@@ -443,6 +461,7 @@ export function createNewThreadHandler(router: AnyRouter) {
           }),
         runtimeMode: defaultRuntimeMode,
         ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
+        ...(options?.linkedIssue ? { linkedIssue: options.linkedIssue } : {}),
       });
       applyStickyState(draftId);
       const modelSelectionOverride = resolveModelSelectionOverride(draftId);

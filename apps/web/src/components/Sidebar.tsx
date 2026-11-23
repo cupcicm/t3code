@@ -136,7 +136,7 @@ import { useSidebarProjectGroups } from "../hooks/useSidebarProjectGroups";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { registerSettleAndAdvance } from "../settleAndAdvance";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
-import { useClientSettings } from "../hooks/useSettings";
+import { useClientSettings, updateClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
@@ -276,6 +276,21 @@ import {
   SidebarProjectFolderHeader,
   sidebarFolderRowId,
 } from "./sidebar/SidebarProjectFolderHeader";
+import {
+  SidebarIssueFolderHeader,
+  SidebarUnlinkedIssueFolderHeader,
+} from "./sidebar/SidebarIssueFolderHeader";
+import {
+  SIDEBAR_UNLINKED_ISSUE_KEY,
+  extractThreadKeyFromSidebarSortableId,
+  groupSidebarThreadsByIssue,
+  sidebarIssueExpansionKey,
+  sidebarIssueFolderRowId,
+  sidebarIssueThreadRowId,
+  type SidebarIssueGroup,
+} from "./sidebar/sidebarIssues.logic";
+import { IssueGlyph } from "./issue/issuePresentation";
+import { useRightPanelStore } from "../rightPanelStore";
 import {
   SidebarDragBoundary,
   SidebarSectionHeader,
@@ -433,6 +448,7 @@ function useSidebarThreads(input: {
   readonly folderGroups: readonly SidebarProjectSnapshot[] | null;
   // Keeps folders with no active threads, so a project the user filtered to or pinned can start one.
   readonly keepEmptyFolders: (group: SidebarProjectSnapshot) => boolean;
+  readonly issueViewEnabled: boolean;
 }) {
   const {
     projectScopeKey,
@@ -445,10 +461,13 @@ function useSidebarThreads(input: {
     routeRowThreadKey,
     folderGroups,
     keepEmptyFolders: keepEmpty,
+    issueViewEnabled,
   } = input;
   // Folders already separate the work, so boring mode has no Working shelf.
   const workingShelfEnabled =
-    useClientSettings((s) => s.sidebarWorkingShelfEnabled) && folderGroups === null;
+    useClientSettings((s) => s.sidebarWorkingShelfEnabled) &&
+    folderGroups === null &&
+    !issueViewEnabled;
   const inboxReturnsVersion = useSyncExternalStore(
     inboxReturns.subscribe,
     inboxReturns.getSnapshot,
@@ -492,7 +511,7 @@ function useSidebarThreads(input: {
     connectedEnvironmentIds,
     optimisticDrop,
     workingShelfEnabled,
-    sortActiveBySend: folderGroups !== null,
+    sortActiveBySend: folderGroups !== null || issueViewEnabled,
     clockKey: `${nowMinute}:${snoozeWakeClock}:${inboxReturnsVersion}`,
   });
 
@@ -550,11 +569,55 @@ function useSidebarThreads(input: {
               : EMPTY_THREADS,
           };
         });
+  const groupedIssues = issueViewEnabled
+    ? groupSidebarThreadsByIssue({
+        activeThreads,
+        allVisibleThreads: partition.visibleThreads,
+      })
+    : null;
+  const issueFolders =
+    groupedIssues === null
+      ? null
+      : groupedIssues.issueGroups.map((group) => {
+          const expansionKey = sidebarIssueExpansionKey(group.issueKey);
+          const collapsed = !resolveProjectExpanded(projectExpandedById, [expansionKey]);
+          return {
+            group,
+            collapsed,
+            threads: collapsed ? routeThreadOnly(group.threads, routeRowThreadKey) : group.threads,
+            hiddenThreads: collapsed
+              ? group.threads.filter((thread) => threadShellKey(thread) !== routeRowThreadKey)
+              : EMPTY_THREADS,
+          };
+        });
+  const unlinkedIssueFolder =
+    groupedIssues === null || groupedIssues.unlinkedThreads.length === 0
+      ? null
+      : (() => {
+          const expansionKey = sidebarIssueExpansionKey(SIDEBAR_UNLINKED_ISSUE_KEY);
+          const collapsed = !resolveProjectExpanded(projectExpandedById, [expansionKey]);
+          return {
+            collapsed,
+            threads: collapsed
+              ? routeThreadOnly(groupedIssues.unlinkedThreads, routeRowThreadKey)
+              : groupedIssues.unlinkedThreads,
+            hiddenThreads: collapsed
+              ? groupedIssues.unlinkedThreads.filter(
+                  (thread) => threadShellKey(thread) !== routeRowThreadKey,
+                )
+              : EMPTY_THREADS,
+          };
+        })();
   const orderedThreads = [
     ...pinnedThreads,
-    ...(projectFolders === null
-      ? activeThreads
-      : projectFolders.flatMap((folder) => folder.threads)),
+    ...(issueFolders !== null
+      ? [
+          ...issueFolders.flatMap((folder) => folder.threads),
+          ...(unlinkedIssueFolder?.threads ?? EMPTY_THREADS),
+        ]
+      : projectFolders !== null
+        ? projectFolders.flatMap((folder) => folder.threads)
+        : activeThreads),
     ...visibleWorkingThreads,
     ...visibleSnoozedThreads,
     ...renderedSettledThreads,
@@ -600,10 +663,16 @@ function useSidebarThreads(input: {
       const keys = sidebarFolderExpansionKeys(group);
       setProjectExpanded(keys, !resolveProjectExpanded(projectExpandedById, keys));
     },
+    issueFolders,
+    unlinkedIssueFolder,
+    toggleIssueFolder: (issueKey: string) => {
+      const key = sidebarIssueExpansionKey(issueKey);
+      setProjectExpanded(key, !resolveProjectExpanded(projectExpandedById, [key]));
+    },
     renderedSettledThreads,
     visibleSnoozedThreads,
     visibleWorkingThreads,
-    orderedThreadKeys: orderedThreads.map(threadShellKey),
+    orderedThreadKeys: [...new Set(orderedThreads.map(threadShellKey))],
     threadByKey: new Map(orderedThreads.map((thread) => [threadShellKey(thread), thread] as const)),
     settledThreadKeys: new Set(settledThreads.map(threadShellKey)),
     snoozedThreadKeys: new Set(snoozedThreads.map(threadShellKey)),
@@ -988,8 +1057,30 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       );
     },
   });
+  const { copyToClipboard: copyIssueLinkToClipboard } = useCopyToClipboard<{ url: string }>({
+    target: {
+      target: "issue link",
+      unavailableMessage: msg("Clipboard API is unavailable while copying issue link."),
+      failureMessage: msg("Failed to copy issue link to the clipboard."),
+    },
+    onError: (error) => {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: gt("Failed to copy issue link"),
+          description: thrownErrorMessage(error, m) ?? gt("An error occurred."),
+        }),
+      );
+    },
+  });
+  const sidebarViewMode = useClientSettings((settings) => settings.sidebarViewMode);
+  const isIssueView = sidebarViewMode === "issues";
   const boringSidebarEnabled = useClientSettings((settings) => settings.boringSidebarEnabled);
   const folderRowsMultiline = useClientSettings((settings) => settings.boringSidebarMultilineRows);
+  const [prPopoverRequest, setPrPopoverRequest] = useState<{
+    issueKey: string;
+    seq: number;
+  } | null>(null);
   const newThreadContext = useHandleNewThread();
   // Row callbacks capture only the handler; the rest of the context changes with the route.
   const { handleNewThread } = newThreadContext;
@@ -1260,6 +1351,72 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     if (isMobile) setOpenMobile(false);
     void handleNewThread(scopeProjectRef(group.environmentId, group.id));
   });
+  const startThreadInIssueFolder = useStableCallback(
+    (group: SidebarIssueGroup<EnvironmentThreadShell>) => {
+      if (isMobile) setOpenMobile(false);
+      void handleNewThread(scopeProjectRef(group.environmentId, group.projectId), {
+        linkedIssue: {
+          tracker: group.link.tracker,
+          host: group.link.host,
+          scope: group.link.scope,
+          key: group.link.key,
+          projectId: group.link.projectId,
+          url: group.link.url,
+          displayKey: group.link.displayKey,
+          title: group.link.title,
+        },
+      });
+    },
+  );
+  const handleIssueFolderContextMenu = useStableCallback(
+    (
+      group: SidebarIssueGroup<EnvironmentThreadShell>,
+      position: { x: number; y: number },
+      source: ContextMenuSource,
+    ) => {
+      const api = readLocalApi();
+      if (!api) return;
+      void (async () => {
+        const clicked = await settlePromise(() =>
+          api.contextMenu.show(
+            [
+              { id: "new-thread", label: gt("New thread") },
+              { id: "pull-requests", label: gt("Pull requests") },
+              { id: "open-issue", label: gt("Open issue") },
+              { id: "copy-link", label: gt("Copy link") },
+            ],
+            position,
+            source,
+          ),
+        );
+        if (clicked._tag === "Failure") return;
+        switch (clicked.value) {
+          case "new-thread":
+            startThreadInIssueFolder(group);
+            return;
+          case "pull-requests":
+            setPrPopoverRequest((current) => ({
+              issueKey: group.issueKey,
+              seq: (current?.seq ?? 0) + 1,
+            }));
+            return;
+          case "open-issue":
+            if (
+              routeThreadRef !== null &&
+              serverConfigs.get(group.environmentId)?.environment.capabilities.issues === true
+            ) {
+              useRightPanelStore.getState().openIssue(routeThreadRef, group.link);
+              return;
+            }
+            window.open(group.link.url, "_blank", "noopener,noreferrer");
+            return;
+          case "copy-link":
+            copyIssueLinkToClipboard(group.link.url, { url: group.link.url });
+            return;
+        }
+      })();
+    },
+  );
   const handleProjectFolderContextMenu = useStableCallback(
     (
       group: SidebarProjectSnapshot,
@@ -1331,6 +1488,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     toggleWorkingShelf,
     projectFolders,
     toggleProjectFolder,
+    issueFolders,
+    unlinkedIssueFolder,
+    toggleIssueFolder,
     renderedSettledThreads,
     visibleSnoozedThreads,
     visibleWorkingThreads,
@@ -1352,14 +1512,16 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     threads: listedThreads,
     delegatedUnderParent,
     routeRowThreadKey,
-    folderGroups: boringSidebarEnabled
-      ? scopedProjectGroups.length === 0
-        ? // An archived project keeps a folder for its active threads, below the rest.
-          [...scopeGroups, ...projectGroups.filter((project) => project.archived)]
-        : scopedProjectGroups
-      : null,
+    folderGroups:
+      !isIssueView && boringSidebarEnabled
+        ? scopedProjectGroups.length === 0
+          ? // An archived project keeps a folder for its active threads, below the rest.
+            [...scopeGroups, ...projectGroups.filter((project) => project.archived)]
+          : scopedProjectGroups
+        : null,
     keepEmptyFolders: (group) =>
       scopedProjectGroups.length > 0 || (group.pinned && !group.archived),
+    issueViewEnabled: isIssueView,
   });
 
   // Ranked across environments as the palette ranks them, so one
@@ -1736,6 +1898,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   // Folder rows only drag out to the composer; folders own their order, so nothing drops in the list.
   const isContextDrag =
     projectFolders !== null ||
+    issueFolders !== null ||
     dragState?.contextDrag === true ||
     dragState?.activeSection === "working";
   const dragTargetSection = isContextDrag ? null : (dragState?.targetSection ?? null);
@@ -1917,7 +2080,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   };
 
   const handleThreadDragStart = (event: DragStartEvent) => {
-    const activeKey = String(event.active.id);
+    const activeKey = extractThreadKeyFromSidebarSortableId(String(event.active.id));
     contextDragKeyRef.current = activeKey;
     const activeSection = sectionByThreadKey.get(activeKey);
     if (activeSection === undefined) return;
@@ -1945,6 +2108,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     });
   };
   const hasProjectFolders = projectFolders !== null && projectFolders.length > 0;
+  const hasIssueFolders =
+    issueFolders !== null && (issueFolders.length > 0 || unlinkedIssueFolder !== null);
   const sidebarListItemsFresh = ((): readonly SidebarListItem[] => {
     const rowsOf = (
       list: readonly EnvironmentThreadShell[],
@@ -1957,6 +2122,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     // Boring mode keeps a pinned open project or one the user filtered to, so it can start a thread.
     if (
       !hasProjectFolders &&
+      !hasIssueFolders &&
       pinnedThreads.length +
         activeThreads.length +
         workingThreads.length +
@@ -2015,6 +2181,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     projectFolders
       ?.map((folder) => `${folder.group.projectKey}:${folder.threads.length}`)
       .join("\n") ?? "",
+    issueFolders?.map((folder) => `${folder.group.issueKey}:${folder.threads.length}`).join("\n") ??
+      "",
+    unlinkedIssueFolder ? `unlinked:${unlinkedIssueFolder.threads.length}` : "",
     visibleDraftSessionCount,
     routeDraftIdForRows ?? "",
   ].join("\0");
@@ -2104,7 +2273,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     );
   })();
   const handleThreadDragEnd = (event: DragEndEvent) => {
-    if (projectFolders !== null) return;
+    if (projectFolders !== null || issueFolders !== null) return;
     const activeKey = String(event.active.id);
     const activeSection = sectionByThreadKey.get(activeKey);
     const target =
@@ -3003,6 +3172,21 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           <SidebarGroup className="z-[1]">
             <SidebarThreadHeader
               hasProjects={projectGroups.length > 0}
+              viewModeToggle={
+                <SidebarHeaderIconButton
+                  data-testid="sidebar-issue-view-toggle"
+                  isActive={isIssueView}
+                  aria-pressed={isIssueView}
+                  label={isIssueView ? gt("Switch to thread view") : gt("Group threads by issue")}
+                  onClick={() =>
+                    void updateClientSettings({
+                      sidebarViewMode: isIssueView ? "threads" : "issues",
+                    })
+                  }
+                >
+                  <IssueGlyph.issue />
+                </SidebarHeaderIconButton>
+              }
               projectScope={
                 <Combobox
                   items={projectScopeItems}
@@ -3326,6 +3510,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           {/* A scope can hide every active thread; say so even when its project still has settled ones. */}
           {!isSearchingThreads &&
           !hasProjectFolders &&
+          !hasIssueFolders &&
           visibleDraftSessionCount === 0 &&
           pinnedThreads.length +
             activeThreads.length +
@@ -3414,6 +3599,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         section: SidebarSection,
                         // The tree row of the project folder this row sits in.
                         folderRow?: string,
+                        rowOptions?: {
+                          readonly rowKey?: string;
+                          readonly sortableId?: string;
+                          readonly sidebarRowId?: string;
+                          readonly skipReveal?: boolean;
+                          readonly hideIssueBadge?: boolean;
+                        },
                       ) => {
                         const threadKey = scopedThreadKey(
                           scopeThreadRef(thread.environmentId, thread.id),
@@ -3427,10 +3619,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           : isCard
                             ? "card"
                             : "slim";
+                        const rowKey = rowOptions?.rowKey ?? threadKey;
+                        const sortableId = rowOptions?.sortableId ?? threadKey;
                         return (
                           <SortableThreadRow
-                            key={threadKey}
-                            sortableId={threadKey}
+                            key={rowKey}
+                            sortableId={sortableId}
+                            sidebarRowId={rowOptions?.sidebarRowId}
+                            hideIssueBadge={rowOptions?.hideIssueBadge}
                             contextDrag={isContextDrag}
                             sortableDisabled={
                               renamingThreadKey === threadKey ||
@@ -3481,7 +3677,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             wokeAt={threadWokeAt(thread, { now: snoozeNow })}
                             isActive={routeRowThreadKey === threadKey}
                             revealRef={
-                              routeRowThreadKey === threadKey ? revealActiveRow : undefined
+                              !rowOptions?.skipReveal && routeRowThreadKey === threadKey
+                                ? revealActiveRow
+                                : undefined
                             }
                             isRouteThread={routeThreadKey === threadKey}
                             readOpensPullRequestsInRightPanel={readOpensPullRequestsInRightPanel}
@@ -3545,8 +3743,79 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       for (const item of sidebarListItems) {
                         if (item.kind === "thread") {
                           // Folders draw active rows in their own place below.
-                          if (projectFolders !== null && item.section === "active") continue;
+                          if (
+                            (projectFolders !== null || issueFolders !== null) &&
+                            item.section === "active"
+                          )
+                            continue;
                           items.push(renderThreadRow(threadByKey.get(item.key)!, item.section));
+                          continue;
+                        }
+                        if (issueFolders !== null && item.marker === "active-placeholder") {
+                          let revealedActive = false;
+                          for (const folder of issueFolders) {
+                            const folderRowId = sidebarIssueFolderRowId(folder.group.issueKey);
+                            items.push(
+                              <SidebarIssueFolderHeader
+                                key={`issue-folder:${folder.group.issueKey}`}
+                                group={folder.group}
+                                collapsed={folder.collapsed}
+                                hiddenThreads={folder.hiddenThreads}
+                                routeThreadRef={routeThreadRef}
+                                prPopoverOpenRequestSeq={
+                                  prPopoverRequest?.issueKey === folder.group.issueKey
+                                    ? prPopoverRequest.seq
+                                    : null
+                                }
+                                onToggle={toggleIssueFolder}
+                                onNewThread={startThreadInIssueFolder}
+                                onContextMenu={handleIssueFolderContextMenu}
+                              />,
+                            );
+                            for (const thread of folder.threads) {
+                              const threadKey = threadShellKey(thread);
+                              const rowId = sidebarIssueThreadRowId(
+                                folder.group.issueKey,
+                                threadKey,
+                              );
+                              const skipReveal = revealedActive && routeRowThreadKey === threadKey;
+                              if (routeRowThreadKey === threadKey) revealedActive = true;
+                              items.push(
+                                renderThreadRow(thread, "active", folderRowId, {
+                                  rowKey: rowId,
+                                  sortableId: rowId,
+                                  sidebarRowId: rowId,
+                                  skipReveal,
+                                  hideIssueBadge: true,
+                                }),
+                              );
+                            }
+                          }
+                          if (unlinkedIssueFolder !== null) {
+                            const folderRowId = sidebarIssueFolderRowId(SIDEBAR_UNLINKED_ISSUE_KEY);
+                            items.push(
+                              <SidebarUnlinkedIssueFolderHeader
+                                key={`issue-folder:${SIDEBAR_UNLINKED_ISSUE_KEY}`}
+                                collapsed={unlinkedIssueFolder.collapsed}
+                                hiddenThreads={unlinkedIssueFolder.hiddenThreads}
+                                onToggle={toggleIssueFolder}
+                              />,
+                            );
+                            for (const thread of unlinkedIssueFolder.threads) {
+                              const threadKey = threadShellKey(thread);
+                              const rowId = sidebarIssueThreadRowId(
+                                SIDEBAR_UNLINKED_ISSUE_KEY,
+                                threadKey,
+                              );
+                              items.push(
+                                renderThreadRow(thread, "active", folderRowId, {
+                                  rowKey: rowId,
+                                  sortableId: rowId,
+                                  sidebarRowId: rowId,
+                                }),
+                              );
+                            }
+                          }
                           continue;
                         }
                         if (projectFolders !== null && item.marker === "active-placeholder") {

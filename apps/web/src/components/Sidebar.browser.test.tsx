@@ -6,8 +6,10 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import {
   DEFAULT_CLIENT_SETTINGS,
   EnvironmentId,
+  IssueTrackerKind,
   type LocalApi,
   ProjectId,
+  SourceControlProviderKind,
   ThreadId,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
@@ -23,6 +25,7 @@ import { useNowMinute } from "../hooks/useNowMinute";
 import { __setClientSettingsForTests, getClientSettings } from "../hooks/useSettings";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { useProjects, useServerConfigs, useQuietThreadShells } from "../state/entities";
+import { usePullRequestList } from "../state/pullRequests";
 import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
@@ -38,6 +41,7 @@ vi.mock(import("../state/olderSettledShelf"), async (original) => {
   return { ...actual, useOlderSettledShelf: vi.fn(actual.useOlderSettledShelf) };
 });
 vi.mock("../state/entities", { spy: true });
+vi.mock("../state/pullRequests", { spy: true });
 vi.mock("../hooks/useHandleNewThread", { spy: true });
 vi.mock("../hooks/useNowMinute", { spy: true });
 vi.mock("../hooks/useThreadRouteTarget", { spy: true });
@@ -395,5 +399,201 @@ describe("sidebar settled pagination", () => {
     const loadedRows = screen.container.querySelectorAll("[data-thread-item]").length;
     await act(() => moreButton.click());
     expect(screen.container.querySelectorAll("[data-thread-item]")).toHaveLength(loadedRows);
+  });
+
+  it("groups threads by linked issue in issue view, duplicates multi-issue threads, and starts a thread in an issue", async () => {
+    using stack = new DisposableStack();
+    const previousSettings = getClientSettings();
+    stack.defer(() => __setClientSettingsForTests(previousSettings));
+    __setClientSettingsForTests({
+      ...DEFAULT_CLIENT_SETTINGS,
+      sidebarViewMode: "issues",
+    });
+
+    const activeProject = project("warpstream");
+    const issueA = {
+      tracker: IssueTrackerKind.make("linear"),
+      host: "linear.app",
+      scope: "WARP",
+      key: "WARP-6069",
+      projectId: activeProject.id,
+      url: "https://linear.app/warpstream/issue/WARP-6069",
+      source: "manual" as const,
+      linkedAt: "2026-11-20T10:00:00.000Z",
+      displayKey: "WARP-6069",
+      title: "Fixes two bugs in DescribeProducers",
+    };
+    const issueB = {
+      tracker: IssueTrackerKind.make("linear"),
+      host: "linear.app",
+      scope: "WARP",
+      key: "WARP-6029",
+      projectId: activeProject.id,
+      url: "https://linear.app/warpstream/issue/WARP-6029",
+      source: "manual" as const,
+      linkedAt: "2026-11-20T11:00:00.000Z",
+      displayKey: "WARP-6029",
+      title: "Rotate serverless API keys",
+    };
+    const sharedThread = makeThreadFixture({
+      environmentId: activeProject.environmentId,
+      projectId: activeProject.id,
+      id: ThreadId.make("thread-shared"),
+      title: "Shared investigation",
+      issues: [issueA, issueB],
+      pullRequests: [
+        {
+          host: "github.com",
+          repository: "warpstreamlabs/warpstream",
+          number: 30208,
+          url: "https://github.com/warpstreamlabs/warpstream/pull/30208",
+          source: "created",
+          linkedAt: "2026-11-20T10:00:00.000Z",
+          snapshot: {
+            state: "open",
+            title: "[WARP-6069] Fixes two bugs in DescribeProducers",
+            headBranch: "cupcicm/pr/30208",
+            baseBranch: "main",
+            isDraft: false,
+            updatedAt: "2026-11-20T12:00:00.000Z",
+            syncedAt: "2026-11-20T12:05:00.000Z",
+          },
+          stack: null,
+        },
+      ],
+    });
+    const unlinkedThread = makeThreadFixture({
+      environmentId: activeProject.environmentId,
+      projectId: activeProject.id,
+      id: ThreadId.make("thread-unlinked"),
+      title: "Ad-hoc scratch",
+      issues: [],
+    });
+
+    const startThread = vi.fn().mockResolvedValue(null);
+    const prListSpy = vi.mocked(usePullRequestList).mockReturnValue({
+      data: {
+        entries: [
+          {
+            environmentId: activeProject.environmentId,
+            provider: SourceControlProviderKind.make("github"),
+            host: "github.com",
+            projectId: activeProject.id,
+            projectTitle: "warpstream",
+            repository: "warpstreamlabs/warpstream",
+            number: 30185,
+            title: "[WARP-6069] Enable dry run for rotation job in staging.",
+            url: "https://github.com/warpstreamlabs/warpstream/pull/30185",
+            state: "merged",
+            isDraft: false,
+            author: { login: "cupcicm", name: null, avatarUrl: null },
+            headBranch: "cupcicm/pr/30185",
+            baseBranch: "main",
+            createdAt: "2026-11-19T08:00:00.000Z",
+            updatedAt: "2026-11-19T12:00:00.000Z",
+            labels: [],
+            mergeability: "mergeable",
+            additions: 10,
+            deletions: 2,
+            viewerReviewRequested: false,
+          },
+        ],
+        errors: [],
+        providers: [],
+        viewers: {},
+        truncated: false,
+        nextCursors: {},
+        truncatedEnvironments: [],
+      },
+      error: null,
+      isPending: false,
+      observations: [],
+      refresh: vi.fn(),
+      retry: vi.fn(),
+    });
+    prListSpy.mockClear();
+    vi.mocked(useProjects).mockReturnValue([activeProject]);
+    vi.mocked(useQuietThreadShells).mockReturnValue([sharedThread, unlinkedThread]);
+    vi.mocked(useThreadRouteTarget).mockReturnValue(null);
+    vi.mocked(useHandleNewThread).mockReturnValue({
+      activeDraftThread: null,
+      activeThread: null,
+      defaultProjectRef: {
+        environmentId: activeProject.environmentId,
+        projectId: activeProject.id,
+      },
+      defaultProjectFallbackReady: true,
+      handleNewThread: startThread,
+      routeDraftId: null,
+      routeThreadRef: null,
+    });
+    vi.mocked(useServerConfigs).mockReturnValue(
+      new Map([
+        [
+          activeProject.environmentId,
+          {
+            scratchWorkspaceRoot: null,
+            shellThreadFamilies: false,
+            environment: { capabilities: { issues: false } },
+          } as unknown as EnvironmentServerConfig,
+        ],
+      ]),
+    );
+
+    await using screen = await render(
+      <SidebarProvider>
+        <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
+      </SidebarProvider>,
+    );
+
+    expect(screen.container.querySelectorAll('[data-testid="sidebar-issue-folder"]')).toHaveLength(
+      2,
+    );
+    expect(
+      screen.container.querySelectorAll('[data-testid="sidebar-unlinked-issue-folder"]'),
+    ).toHaveLength(1);
+    expect(
+      screen.container.querySelectorAll('[data-thread-item="local:thread-shared"]'),
+    ).toHaveLength(2);
+    expect(
+      screen.container.querySelectorAll('[data-thread-item="local:thread-unlinked"]'),
+    ).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "2 linked issues", exact: true }).query()).toBeNull();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "New thread in WARP-6069", exact: true }),
+    );
+    expect(startThread).toHaveBeenCalledWith(
+      { environmentId: activeProject.environmentId, projectId: activeProject.id },
+      expect.objectContaining({
+        linkedIssue: expect.objectContaining({
+          key: "WARP-6069",
+          displayKey: "WARP-6069",
+        }),
+      }),
+    );
+
+    expect(prListSpy).not.toHaveBeenCalled();
+    await userEvent.click(
+      screen.getByRole("button", { name: "1 pull request for WARP-6069", exact: true }),
+    );
+    expect(prListSpy).toHaveBeenCalledWith([
+      {
+        environmentId: activeProject.environmentId,
+        input: {
+          state: "all",
+          involvement: "all",
+          projectIds: [activeProject.id],
+          query: "[WARP-6069]",
+          limit: 50,
+        },
+      },
+    ]);
+    await expect
+      .element(screen.getByText("[WARP-6069] Fixes two bugs in DescribeProducers"))
+      .toBeInTheDocument();
+    await expect
+      .element(screen.getByText("[WARP-6069] Enable dry run for rotation job in staging."))
+      .toBeInTheDocument();
   });
 });

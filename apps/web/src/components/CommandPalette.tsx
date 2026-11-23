@@ -116,7 +116,7 @@ import {
   copyPromptLink,
   promptLinkRepositoryOf,
 } from "./promptLinks/copyPromptLink";
-import { useClientSettings } from "../hooks/useSettings";
+import { updateClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { readLocalApi } from "../localApi";
 import { configuredHostedAppUrl } from "../hostedPairing";
@@ -473,6 +473,7 @@ function OpenCommandPaletteDialog(props: {
     highlightClearedRef.current = true;
     setHighlightedItemValue(null);
   }
+  const sidebarViewMode = useClientSettings((settings) => settings.sidebarViewMode);
   const clientSettings = useClientSettings(selectCommandPaletteClientSettings);
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
@@ -1820,6 +1821,22 @@ function OpenCommandPaletteDialog(props: {
       },
     });
   }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:sidebar-view-mode",
+    searchTerms: ["sidebar", "issues", "group", "view", "threads", "linear"],
+    title:
+      sidebarViewMode === "issues"
+        ? gt("Switch sidebar to thread view")
+        : gt("Group sidebar threads by issue"),
+    icon: <IssueGlyph.issue className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await updateClientSettings({
+        sidebarViewMode: sidebarViewMode === "issues" ? "threads" : "issues",
+      });
+    },
+  });
 
   actionItems.push({
     kind: "action",

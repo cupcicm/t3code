@@ -11,6 +11,7 @@ import {
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
   EnvironmentId,
+  IssueTrackerKind,
   ModelSelection,
   ProjectId,
   ProviderInstanceId,
@@ -420,6 +421,18 @@ const PersistedDraftThreadState = Schema.Struct({
   checkoutPullRequest: Schema.optionalKey(
     Schema.Struct({ url: Schema.String, branch: Schema.String }),
   ),
+  linkedIssue: Schema.optionalKey(
+    Schema.Struct({
+      tracker: IssueTrackerKind,
+      host: Schema.String,
+      scope: Schema.String,
+      key: Schema.String,
+      projectId: ProjectId,
+      url: Schema.String,
+      displayKey: Schema.String,
+      title: Schema.String,
+    }),
+  ),
   promotedTo: Schema.optionalKey(
     Schema.NullOr(
       Schema.Struct({
@@ -518,6 +531,7 @@ export interface DraftSessionState {
   startFromOrigin: boolean;
   /** Linked to the thread when the draft is sent on this branch. */
   checkoutPullRequest?: DraftCheckoutPullRequest;
+  linkedIssue?: DraftLinkedIssue;
   promotedTo?: ScopedThreadRef | null;
 }
 
@@ -526,6 +540,17 @@ export type DraftThreadState = DraftSessionState;
 export interface DraftCheckoutPullRequest {
   readonly url: string;
   readonly branch: string;
+}
+
+export interface DraftLinkedIssue {
+  readonly tracker: IssueTrackerKind;
+  readonly host: string;
+  readonly scope: string;
+  readonly key: string;
+  readonly projectId: ProjectId;
+  readonly url: string;
+  readonly displayKey: string;
+  readonly title: string;
 }
 
 /**
@@ -591,6 +616,7 @@ interface ComposerDraftStoreState {
       environmentSelection?: "auto" | "manual";
       loadBalancedEnvironmentId?: EnvironmentId | null;
       checkoutPullRequest?: DraftCheckoutPullRequest | null;
+      linkedIssue?: DraftLinkedIssue | null;
     },
   ) => void;
   setProjectDraftThreadId: (
@@ -608,6 +634,7 @@ interface ComposerDraftStoreState {
       environmentSelection?: "auto" | "manual";
       loadBalancedEnvironmentId?: EnvironmentId | null;
       checkoutPullRequest?: DraftCheckoutPullRequest | null;
+      linkedIssue?: DraftLinkedIssue | null;
     },
   ) => void;
   setDraftThreadContext: (
@@ -624,6 +651,7 @@ interface ComposerDraftStoreState {
       environmentSelection?: "auto" | "manual";
       loadBalancedEnvironmentId?: EnvironmentId | null;
       checkoutPullRequest?: DraftCheckoutPullRequest | null;
+      linkedIssue?: DraftLinkedIssue | null;
     },
   ) => void;
   clearProjectDraftThreadId: (projectRef: ScopedProjectRef) => void;
@@ -1727,6 +1755,7 @@ function createDraftThreadState(
     environmentSelection?: "auto" | "manual";
     loadBalancedEnvironmentId?: EnvironmentId | null;
     checkoutPullRequest?: DraftCheckoutPullRequest | null;
+    linkedIssue?: DraftLinkedIssue | null;
   },
 ): DraftThreadState {
   const projectChanged =
@@ -1756,6 +1785,7 @@ function createDraftThreadState(
     options?.checkoutPullRequest,
     projectChanged,
   );
+  const linkedIssue = resolveDraftLinkedIssue(existingThread, options?.linkedIssue);
   return {
     threadId,
     environmentId: projectRef.environmentId,
@@ -1781,6 +1811,7 @@ function createDraftThreadState(
       options?.envMode ?? (nextWorktreePath ? "worktree" : (existingThread?.envMode ?? "local")),
     startFromOrigin: nextStartFromOrigin,
     ...(checkoutPullRequest ? { checkoutPullRequest } : {}),
+    ...(linkedIssue ? { linkedIssue } : {}),
     promotedTo: null,
   };
 }
@@ -1795,11 +1826,38 @@ function resolveCheckoutPullRequest(
   return projectChanged ? undefined : existing?.checkoutPullRequest;
 }
 
+function resolveDraftLinkedIssue(
+  existing: DraftThreadState | undefined,
+  explicit: DraftLinkedIssue | null | undefined,
+): DraftLinkedIssue | undefined {
+  if (explicit !== undefined) return explicit ?? undefined;
+  return existing?.linkedIssue;
+}
+
 function checkoutPullRequestsEqual(
   left: DraftCheckoutPullRequest | undefined,
   right: DraftCheckoutPullRequest | undefined,
 ): boolean {
   return left === right || (left?.url === right?.url && left?.branch === right?.branch);
+}
+
+function draftLinkedIssuesEqual(
+  left: DraftLinkedIssue | undefined,
+  right: DraftLinkedIssue | undefined,
+): boolean {
+  return (
+    left === right ||
+    (left !== undefined &&
+      right !== undefined &&
+      left.tracker === right.tracker &&
+      left.host === right.host &&
+      left.scope === right.scope &&
+      left.key === right.key &&
+      left.projectId === right.projectId &&
+      left.url === right.url &&
+      left.displayKey === right.displayKey &&
+      left.title === right.title)
+  );
 }
 
 function scopedThreadRefsEqual(
@@ -1833,6 +1891,7 @@ function draftThreadsEqual(left: DraftThreadState | undefined, right: DraftThrea
     left.envMode === right.envMode &&
     left.startFromOrigin === right.startFromOrigin &&
     checkoutPullRequestsEqual(left.checkoutPullRequest, right.checkoutPullRequest) &&
+    draftLinkedIssuesEqual(left.linkedIssue, right.linkedIssue) &&
     scopedThreadRefsEqual(left.promotedTo, right.promotedTo)
   );
 }
@@ -1881,6 +1940,43 @@ function normalizePersistedCheckoutPullRequest(value: unknown): DraftCheckoutPul
     branch.length > 0
     ? { url, branch }
     : null;
+}
+
+const isIssueTrackerKind = Schema.is(IssueTrackerKind);
+
+function normalizePersistedDraftLinkedIssue(value: unknown): DraftLinkedIssue | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const { tracker, host, scope, key, projectId, url, displayKey, title } = record;
+  if (
+    !isIssueTrackerKind(tracker) ||
+    typeof host !== "string" ||
+    host.length === 0 ||
+    typeof scope !== "string" ||
+    scope.length === 0 ||
+    typeof key !== "string" ||
+    key.length === 0 ||
+    typeof projectId !== "string" ||
+    projectId.length === 0 ||
+    typeof url !== "string" ||
+    url.length === 0 ||
+    typeof displayKey !== "string" ||
+    displayKey.length === 0 ||
+    typeof title !== "string" ||
+    title.length === 0
+  ) {
+    return null;
+  }
+  return {
+    tracker,
+    host,
+    scope,
+    key,
+    projectId: ProjectId.make(projectId),
+    url,
+    displayKey,
+    title,
+  };
 }
 
 function normalizePersistedDraftThreads(
@@ -1948,6 +2044,7 @@ function normalizePersistedDraftThreads(
       const checkoutPullRequest = normalizePersistedCheckoutPullRequest(
         candidateDraftThread.checkoutPullRequest,
       );
+      const linkedIssue = normalizePersistedDraftLinkedIssue(candidateDraftThread.linkedIssue);
       const promotedToCandidate = candidateDraftThread.promotedTo;
       const promotedToRecord =
         promotedToCandidate && typeof promotedToCandidate === "object"
@@ -2006,6 +2103,7 @@ function normalizePersistedDraftThreads(
             ? { loadBalancedEnvironmentId: null }
             : {}),
         ...(checkoutPullRequest ? { checkoutPullRequest } : {}),
+        ...(linkedIssue ? { linkedIssue } : {}),
         promotedTo,
       };
     }
@@ -2785,6 +2883,7 @@ function toHydratedDraftThreadState(
     ...(persistedDraftThread.checkoutPullRequest
       ? { checkoutPullRequest: persistedDraftThread.checkoutPullRequest }
       : {}),
+    ...(persistedDraftThread.linkedIssue ? { linkedIssue: persistedDraftThread.linkedIssue } : {}),
     promotedTo: persistedDraftThread.promotedTo
       ? scopeThreadRef(
           persistedDraftThread.promotedTo.environmentId as EnvironmentId,
@@ -3049,6 +3148,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               options.checkoutPullRequest,
               projectChanged,
             );
+            const linkedIssue = resolveDraftLinkedIssue(existing, options.linkedIssue);
             const nextDraftThread: DraftThreadState = {
               threadId: existing.threadId,
               environmentId: nextProjectRef.environmentId,
@@ -3073,6 +3173,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 options.envMode ?? (nextWorktreePath ? "worktree" : (existing.envMode ?? "local")),
               startFromOrigin: nextStartFromOrigin,
               ...(checkoutPullRequest ? { checkoutPullRequest } : {}),
+              ...(linkedIssue ? { linkedIssue } : {}),
               promotedTo: existing.promotedTo ?? null,
             };
             const isUnchanged =
@@ -3092,6 +3193,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 nextDraftThread.checkoutPullRequest,
                 existing.checkoutPullRequest,
               ) &&
+              draftLinkedIssuesEqual(nextDraftThread.linkedIssue, existing.linkedIssue) &&
               scopedThreadRefsEqual(nextDraftThread.promotedTo, existing.promotedTo);
             if (isUnchanged) {
               return state;

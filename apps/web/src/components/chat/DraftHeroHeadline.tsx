@@ -4,7 +4,7 @@ import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/c
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { T, useGT, Var } from "gt-react";
-import { FolderPlusIcon } from "lucide-react";
+import { FolderPlusIcon, XIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { useRef, useState } from "react";
 
@@ -45,6 +45,7 @@ import {
 } from "../ui/combobox";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
+import { IssueGlyph } from "../issue/issuePresentation";
 import { DraftProjectName } from "./DraftProjectName";
 import { DraftHeroProjectHeading } from "./DraftHeroProjectHeading";
 import { TriageDraftHero } from "./TriageDraftHero";
@@ -74,6 +75,10 @@ export function DraftHeroHeadline({
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const setLogicalProjectDraftThreadId = useComposerDraftStore(
     (store) => store.setLogicalProjectDraftThreadId,
+  );
+  const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
+  const draftLinkedIssue = useComposerDraftStore((store) =>
+    draftId ? (store.getDraftSession(draftId)?.linkedIssue ?? null) : null,
   );
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
   // A boolean, so typing in a draft does not re-render the hero.
@@ -381,6 +386,33 @@ export function DraftHeroHeadline({
           {isScratchDraft ? projectSelector : orStartWithoutProject}
         </p>
       )}
+      {draftLinkedIssue && draftId ? (
+        <div
+          data-testid="draft-linked-issue"
+          className="pointer-events-auto mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-border/70 bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground"
+        >
+          <IssueGlyph.issue aria-hidden className="size-3.5 shrink-0 text-success-foreground" />
+          <a
+            href={draftLinkedIssue.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex min-w-0 items-center gap-1.5 hover:text-foreground"
+          >
+            <span className="shrink-0 font-mono font-medium text-foreground">
+              {draftLinkedIssue.displayKey}
+            </span>
+            <span className="max-w-72 truncate">{draftLinkedIssue.title}</span>
+          </a>
+          <button
+            type="button"
+            aria-label={gt("Remove linked issue")}
+            onClick={() => setDraftThreadContext(draftId, { linkedIssue: null })}
+            className="inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <XIcon aria-hidden className="size-3" />
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

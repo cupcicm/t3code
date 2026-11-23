@@ -22,6 +22,7 @@ import {
   DEFAULT_MODEL,
   DEFAULT_MODEL_BY_PROVIDER,
   EnvironmentId,
+  IssueTrackerKind,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -2950,6 +2951,41 @@ describe("composerDraftStore checkout pull request", () => {
     } finally {
       await useComposerDraftStore.persist.clearStorage();
       vi.useRealTimers();
+      resetComposerDraftStore();
+    }
+  });
+
+  it("retains and clears linkedIssue on a draft session", () => {
+    const store = useComposerDraftStore.getState;
+    const projectId = ProjectId.make("project-issue");
+    const projectRef = scopeProjectRef(TEST_ENVIRONMENT_ID, projectId);
+    const otherProjectRef = scopeProjectRef(TEST_ENVIRONMENT_ID, ProjectId.make("project-other"));
+    const draftId = DraftId.make("draft-issue");
+    const threadId = ThreadId.make("thread-issue");
+    const linkedIssue = {
+      tracker: IssueTrackerKind.make("linear"),
+      host: "linear.app",
+      scope: "WARP",
+      key: "WARP-6069",
+      projectId,
+      url: "https://linear.app/warpstream/issue/WARP-6069",
+      displayKey: "WARP-6069",
+      title: "Fixes two bugs in DescribeProducers",
+    };
+
+    try {
+      store().setLogicalProjectDraftThreadId(scopedProjectKey(projectRef), projectRef, draftId, {
+        threadId,
+        linkedIssue,
+      });
+      expect(store().getDraftSession(draftId)?.linkedIssue).toEqual(linkedIssue);
+
+      store().setDraftThreadContext(draftId, { projectRef: otherProjectRef });
+      expect(store().getDraftSession(draftId)?.linkedIssue).toEqual(linkedIssue);
+
+      store().setDraftThreadContext(draftId, { linkedIssue: null });
+      expect(store().getDraftSession(draftId)?.linkedIssue).toBeUndefined();
+    } finally {
       resetComposerDraftStore();
     }
   });
