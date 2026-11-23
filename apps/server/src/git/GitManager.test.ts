@@ -4396,24 +4396,8 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         let commitGenerationCalls = 0;
         let prGenerationCalls = 0;
 
-        const { manager, providerCalls } = yield* makeManager({
-          providerScenario: { prListSequence: [[], [], [], []] },
-          serverSettings: {
-            sourceControlWritingStyle: {
-              mode: "use_longest_commit" as const,
-            },
-          },
-          textGeneration: {
-            generateCommitMessage: () => {
-              commitGenerationCalls += 1;
-              return Effect.succeed({ subject: "Generated", body: "" });
-            },
-            generatePrContent: () => {
-              prGenerationCalls += 1;
-              return Effect.succeed({ title: "Generated PR", body: "Generated body" });
-            },
-          },
-          seed: Effect.gen(function* () {
+        const seedThreadWithIssue = (eventPrefix: string) =>
+          Effect.gen(function* () {
             const store = yield* ProjectionStore.ProjectionStoreV2;
             const threadPayload = {
               createdBy: "user" as const,
@@ -4443,7 +4427,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               deletedAt: null,
             };
             yield* store.apply({
-              id: EventId.make("event:longest-commit:thread"),
+              id: EventId.make(`event:${eventPrefix}:thread`),
               type: "thread.created",
               threadId,
               providerInstanceId,
@@ -4451,7 +4435,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               payload: threadPayload,
             });
             yield* store.apply({
-              id: EventId.make("event:longest-commit:issue"),
+              id: EventId.make(`event:${eventPrefix}:issue`),
               type: "thread.issue-synced",
               threadId,
               occurredAt: createdAt,
@@ -4473,7 +4457,26 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 ],
               },
             });
-          }),
+          });
+
+        const { manager, providerCalls } = yield* makeManager({
+          providerScenario: { prListSequence: [[], [], [], []] },
+          serverSettings: {
+            sourceControlWritingStyle: {
+              mode: "use_longest_commit" as const,
+            },
+          },
+          textGeneration: {
+            generateCommitMessage: () => {
+              commitGenerationCalls += 1;
+              return Effect.succeed({ subject: "Generated", body: "" });
+            },
+            generatePrContent: () => {
+              prGenerationCalls += 1;
+              return Effect.succeed({ title: "Generated PR", body: "Generated body" });
+            },
+          },
+          seed: seedThreadWithIssue("longest-commit"),
         });
 
         NodeFS.writeFileSync(NodePath.join(repoDir, "a.txt"), "first\n");
@@ -4527,6 +4530,25 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           (call) => call.operation === "createChangeRequest",
         );
         expect(createCalls[1]).toMatchObject({
+          operation: "createChangeRequest",
+          title: "[ENG-404] Serialize token refresh",
+          body: "- Linear [ENG-404](https://linear.app/acme/issue/ENG-404/serialize-refresh)\n\nAvoid concurrent refresh races when two tabs reconnect.",
+        });
+
+        const defaultMode = yield* makeManager({
+          providerScenario: { prListSequence: [[], []] },
+          seed: seedThreadWithIssue("default-mode"),
+        });
+        yield* defaultMode.manager.createPullRequest({
+          cwd: repoDir,
+          projectId,
+          threadId,
+          title: "Manual PR title",
+          body: "Manual PR body",
+        });
+        expect(
+          defaultMode.providerCalls.find((call) => call.operation === "createChangeRequest"),
+        ).toMatchObject({
           operation: "createChangeRequest",
           title: "[ENG-404] Manual PR title",
           body: "- Linear [ENG-404](https://linear.app/acme/issue/ENG-404/serialize-refresh)\n\nManual PR body",
