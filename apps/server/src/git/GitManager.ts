@@ -2640,6 +2640,21 @@ export const make = Effect.gen(function* () {
     };
   });
 
+  const readLongestCommitPullRequestContent = Effect.fn(
+    "GitManager.readLongestCommitPullRequestContent",
+  )(function* (cwd: string, baseRangeRef: string, operation: "runPrStep" | "createPullRequest") {
+    const messages = yield* readRangeCommitMessages(cwd, baseRangeRef);
+    const selected = selectLongestCommitMessage(messages);
+    if (selected === null) {
+      return yield* new GitManagerError({
+        operation,
+        cwd,
+        detail: "No commits found to build pull request title and description.",
+      });
+    }
+    return selected;
+  });
+
   const runPrStep = (
     settings: SourceControlTextGenerationSettings,
     cwd: string,
@@ -2660,16 +2675,7 @@ export const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const baseRangeRef = yield* resolveBaseRangeRef(cwd, baseRef);
           if (settings.style.mode === "use_longest_commit") {
-            const messages = yield* readRangeCommitMessages(cwd, baseRangeRef);
-            const selected = selectLongestCommitMessage(messages);
-            if (selected === null) {
-              return yield* new GitManagerError({
-                operation: "runPrStep",
-                cwd,
-                detail: "No commits found to build pull request title and description.",
-              });
-            }
-            return selected;
+            return yield* readLongestCommitPullRequestContent(cwd, baseRangeRef, "runPrStep");
           }
           const terms = sourceControlDefinitions.get(provider.kind).changeRequest;
           yield* emit({
@@ -2714,7 +2720,29 @@ export const make = Effect.gen(function* () {
       undefined,
       input.baseBranch,
       input.draft === true,
-      () => Effect.succeed({ title: input.title, body: input.body }),
+      ({ baseRef }) =>
+        Effect.gen(function* () {
+          const { settings } = yield* projectSettingsFor(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new GitManagerError({
+                  operation: "createPullRequest",
+                  cwd: input.cwd,
+                  detail: "Failed to get server settings.",
+                  cause,
+                }),
+            ),
+          );
+          if (settings.sourceControlWritingStyle.mode === "use_longest_commit") {
+            const baseRangeRef = yield* resolveBaseRangeRef(input.cwd, baseRef);
+            return yield* readLongestCommitPullRequestContent(
+              input.cwd,
+              baseRangeRef,
+              "createPullRequest",
+            );
+          }
+          return { title: input.title, body: input.body };
+        }),
     );
     // The thread's branch PR comes from status, which may hold the lookup from before.
     if (result.status === "created") yield* invalidateStatus(input.cwd);
