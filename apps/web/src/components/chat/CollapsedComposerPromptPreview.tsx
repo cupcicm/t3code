@@ -2,6 +2,7 @@ import { isProviderSkillUserInvocable } from "@t3tools/client-runtime/providerSk
 import type { ServerProviderSkill } from "@t3tools/contracts";
 import { assistantCitationLabel } from "@t3tools/shared/assistantCitations";
 import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
+import { isCodeReferenceContext } from "@t3tools/shared/pastedCodeReferences";
 import { fileBasename } from "@t3tools/shared/path";
 import {
   CircleDashedIcon,
@@ -94,18 +95,32 @@ export function CollapsedComposerPromptPreview(props: {
         );
       case "context-reference": {
         const entry = resolvedContextRecord(props.contextRecords, segment.kind, segment.contextId);
-        return entry ? (
+        if (!entry) {
+          return (
+            <ContextChipShell
+              key={key}
+              state="unresolved"
+              icon={<CircleDashedIcon />}
+              label={segment.label}
+            />
+          );
+        }
+        const isCodeRef = entry.kind === "review-comment" && isCodeReferenceContext(entry.record);
+        return (
           <ContextChipShell
             key={key}
-            kind={entry.kind}
-            icon={CONTEXT_REFERENCE_ICONS[entry.kind](segment.label, props.theme)}
-            label={segment.label}
-          />
-        ) : (
-          <ContextChipShell
-            key={key}
-            state="unresolved"
-            icon={<CircleDashedIcon />}
+            kind={isCodeRef ? "mention" : entry.kind}
+            icon={
+              isCodeRef ? (
+                <PierreEntryIcon
+                  pathValue={entry.record.filePath}
+                  kind="file"
+                  theme={props.theme}
+                />
+              ) : (
+                CONTEXT_REFERENCE_ICONS[entry.kind](segment.label, props.theme)
+              )
+            }
             label={segment.label}
           />
         );

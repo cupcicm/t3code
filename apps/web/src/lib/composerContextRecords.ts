@@ -117,6 +117,7 @@ export function reviewCommentContextLabel(
 const REVIEW_SECTION_TITLES: ReadonlyMap<string, string> = new Map([
   ["File comment", msg("File comment")],
   ["Review guide", msg("Review guide")],
+  ["Code reference", msg("Code reference")],
 ]);
 
 /** A stored review comment `sectionTitle` for display; the record itself stays English. */

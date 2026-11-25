@@ -134,7 +134,12 @@ describe("splitFilePathPosition", () => {
     ["src/main.ts:3", "#L18C2", { path: "src/main.ts", line: 3 }],
     ["src/main.ts:0", "", { path: "src/main.ts" }],
     ["src/main.ts:42-64", "", { path: "src/main.ts", line: 42, endLine: 64 }],
+    ["src/main.ts:42:5-64:12", "", { path: "src/main.ts", line: 42, column: 5, endLine: 64 }],
     ["src/main.ts", "#L42-L64", { path: "src/main.ts", line: 42, endLine: 64 }],
+    ["src/main.ts#L42", "", { path: "src/main.ts", line: 42 }],
+    ["src/main.ts#L42-64", "", { path: "src/main.ts", line: 42, endLine: 64 }],
+    ["src/main.ts#L42-L64", "", { path: "src/main.ts", line: 42, endLine: 64 }],
+    ["src/main.ts#42-64", "", { path: "src/main.ts", line: 42, endLine: 64 }],
     ["src/main.ts:42-42", "", { path: "src/main.ts", line: 42 }],
   ])("splits %s%s", (path, hash, expected) => {
     expect(splitFilePathPosition(path, hash)).toEqual(expected);

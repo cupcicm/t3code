@@ -130,7 +130,9 @@ export function contextChipPresentation(
         ? "image"
         : kind === "review-comment" && record?.sectionId?.startsWith("pull-request:")
           ? "pull-request"
-          : kind;
+          : kind === "review-comment" && record?.sectionId?.startsWith("code-reference:")
+            ? "mention"
+            : kind;
   if (presentationKind === "pull-request") {
     const pullRequest = record?.pullRequest;
     const state =
@@ -161,6 +163,7 @@ export function contextChipIcon(
 
 export function contextRecordFileName(record?: object): string {
   if (record && "path" in record && typeof record.path === "string") return record.path;
+  if (record && "filePath" in record && typeof record.filePath === "string") return record.filePath;
   if (record && "name" in record && typeof record.name === "string") return record.name;
   return "";
 }

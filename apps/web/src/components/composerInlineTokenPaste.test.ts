@@ -62,4 +62,46 @@ describe("importPastedComposerText", () => {
       importPastedComposerText(clipboard({ "text/plain": "x\r\n\r\ny\rz" }), () => new Map()),
     ).toBe("x\n\ny\nz");
   });
+
+  it("imports pasted Cursor/VS Code file-line references as review-comment context chips", () => {
+    const imported: Array<ComposerContextClipboardFragment> = [];
+    const text = importPastedComposerText(
+      clipboard({ "text/plain": "@/repo/src/components/Button.tsx#L10-L25" }),
+      importAll(imported),
+      { cwd: "/repo", environmentId: thread.environmentId },
+    );
+    expect(imported).toHaveLength(1);
+    const record = imported[0]!.records[0]!;
+    expect(record).toMatchObject({
+      kind: "review-comment",
+      sectionId: "code-reference:src/components/Button.tsx",
+      sectionTitle: "Code reference",
+      filePath: "src/components/Button.tsx",
+      startIndex: 9,
+      endIndex: 24,
+      rangeLabel: "L10 to L25",
+    });
+    expect(text).toBe(
+      `[Button.tsx L10 to L25](t3-context://v1/review-comment/${record.contextId})`,
+    );
+  });
+
+  it("imports a pasted Cursor fenced code block with its code intact", () => {
+    const imported: Array<ComposerContextClipboardFragment> = [];
+    const text = importPastedComposerText(
+      clipboard({ "text/plain": "```12:14:src/app.ts\nconst a = 1;\n```" }),
+      importAll(imported),
+      { environmentId: thread.environmentId },
+    );
+    expect(imported).toHaveLength(1);
+    const record = imported[0]!.records[0]!;
+    expect(record).toMatchObject({
+      kind: "review-comment",
+      filePath: "src/app.ts",
+      startIndex: 11,
+      endIndex: 13,
+      diff: "const a = 1;",
+    });
+    expect(text).toBe(`[app.ts L12 to L14](t3-context://v1/review-comment/${record.contextId})`);
+  });
 });

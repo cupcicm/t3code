@@ -5,9 +5,11 @@ import {
   stripSlashPrefixedWindowsDrive,
 } from "./path.ts";
 
-const POSITION_SUFFIX_CAPTURE_PATTERN = /:(\d+)(?::(\d+)|-(\d+))?$/;
+const POSITION_SUFFIX_CAPTURE_PATTERN = /:(\d+)(?::(\d+)(?:-(\d+)(?::\d+)?)?|-(\d+))?$/;
 
-const POSITION_HASH_PATTERN = /^#L(\d+)(?:C(\d+)|-L?(\d+))?$/i;
+const POSITION_HASH_PATTERN = /^#L?(\d+)(?:C(\d+)|-L?(\d+))?$/i;
+
+const INLINE_HASH_SUFFIX_PATTERN = /#L?(\d+)(?:C(\d+)|-L?(\d+))?$/i;
 
 /**
  * Keeps paths percent-encoded to avoid double decoding. `localhost` and `localHostname` (the
@@ -55,14 +57,31 @@ export interface FilePathPosition {
 
 export function splitFilePathPosition(path: string, hash = ""): FilePathPosition {
   const suffixMatch = path.match(POSITION_SUFFIX_CAPTURE_PATTERN);
-  const match = suffixMatch ?? hash.match(POSITION_HASH_PATTERN);
+  if (suffixMatch?.[1] && suffixMatch.index !== undefined && suffixMatch.index > 0) {
+    const line = Number.parseInt(suffixMatch[1], 10);
+    const column = suffixMatch[2] === undefined ? undefined : Number.parseInt(suffixMatch[2], 10);
+    const rawEndLine = suffixMatch[3] ?? suffixMatch[4];
+    const endLine = rawEndLine === undefined ? undefined : Number.parseInt(rawEndLine, 10);
+    return {
+      path: path.slice(0, -suffixMatch[0].length),
+      ...(line > 0 ? { line } : {}),
+      ...(column !== undefined && column > 0 ? { column } : {}),
+      ...(line > 0 && endLine !== undefined && endLine > line ? { endLine } : {}),
+    };
+  }
+
+  const inlineHashMatch = hash === "" ? path.match(INLINE_HASH_SUFFIX_PATTERN) : null;
+  const match =
+    inlineHashMatch && inlineHashMatch.index !== undefined && inlineHashMatch.index > 0
+      ? inlineHashMatch
+      : hash.match(POSITION_HASH_PATTERN);
   if (!match?.[1]) return { path };
 
   const line = Number.parseInt(match[1], 10);
   const column = match[2] === undefined ? undefined : Number.parseInt(match[2], 10);
   const endLine = match[3] === undefined ? undefined : Number.parseInt(match[3], 10);
   return {
-    path: suffixMatch ? path.slice(0, -suffixMatch[0].length) : path,
+    path: inlineHashMatch && match === inlineHashMatch ? path.slice(0, -match[0].length) : path,
     ...(line > 0 ? { line } : {}),
     ...(column !== undefined && column > 0 ? { column } : {}),
     ...(line > 0 && endLine !== undefined && endLine > line ? { endLine } : {}),
