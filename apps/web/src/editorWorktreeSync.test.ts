@@ -114,6 +114,10 @@ describe("runPushToEditorWorktreeWithConfirm", () => {
         headSha: "abc123",
       });
       expect(pushCommand).toHaveBeenCalledTimes(2);
+      expect(pushCommand).toHaveBeenNthCalledWith(1, {
+        environmentId: "env-1",
+        input: { cwd: "/wt/myrepo/t3-1", threadId: "thread-1", autoPullPrevious: true },
+      });
       expect(pushCommand).toHaveBeenNthCalledWith(2, {
         environmentId: "env-1",
         input: { cwd: "/wt/myrepo/t3-1", threadId: "thread-1", force: true },

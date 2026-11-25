@@ -225,6 +225,9 @@ export async function pushThreadWorktreeToEditorImperative(input: {
     resolve,
   });
   if (!pushed) return false;
+  if (pushed.autoPulledThread) {
+    refreshThreadGitViews(input.environmentId, pushed.autoPulledThread.cwd);
+  }
   if (!readEnvironmentScope(input.environmentId, AuthOrchestrationOperateScope)) return false;
   const opened = await runAtomCommand(appAtomRegistry, shellEnvironment.openInEditor, {
     environmentId: input.environmentId,
@@ -422,16 +425,18 @@ export function useEditorWorktreeActions(input: {
       onError: showErrorToast,
       ...(options.resolve ? { resolve: options.resolve } : {}),
     })
-      .then((pushed) =>
-        pushed
-          ? launchInEditor(
-              options.editor,
-              pushed.editorWorktreePath,
-              options.targetPath,
-              options.targetIsFile ?? false,
-            )
-          : false,
-      )
+      .then((pushed) => {
+        if (!pushed) return false;
+        if (pushed.autoPulledThread) {
+          refreshThreadGitViews(input.environmentId, pushed.autoPulledThread.cwd);
+        }
+        return launchInEditor(
+          options.editor,
+          pushed.editorWorktreePath,
+          options.targetPath,
+          options.targetIsFile ?? false,
+        );
+      })
       .then(
         (opened) => {
           setIsPushing(false);

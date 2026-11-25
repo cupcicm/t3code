@@ -120,7 +120,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("EditorWorktreeSe
           const path = yield* Path.Path;
 
           const mainStatus = yield* service.status({ cwd: mainRepo });
-          assert.strictEqual(mainStatus.isLinkedWorktree, false);
+          assert.strictEqual(mainStatus.isLinkedWorktree, true);
+          assert.strictEqual(mainStatus.exists, false);
 
           const beforePush = yield* service.status({ cwd: worktreeA });
           assert.strictEqual(beforePush.isLinkedWorktree, true);
@@ -162,6 +163,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("EditorWorktreeSe
           assert.strictEqual(cleanStatus.exists, true);
           assert.strictEqual(cleanStatus.ownerThreadId, THREAD_A);
           assert.strictEqual(cleanStatus.hasUnpulledEditorChanges, false);
+
+          // The editor worktree itself cannot sync onto itself.
+          const selfStatus = yield* service.status({ cwd: expectedCursorPath });
+          assert.strictEqual(selfStatus.isLinkedWorktree, false);
 
           yield* git(expectedCursorPath, ["add", "handler.go", "new_helper.go"]);
           yield* git(expectedCursorPath, ["commit", "-m", "feat: commit inside cursor"]);
@@ -419,6 +424,42 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("EditorWorktreeSe
             assert.strictEqual(splitBrain.reason, "unpulled_editor_changes");
             assert.strictEqual(splitBrain.ownerThreadId, THREAD_B);
           }
+
+          // Local (mainRepo) threads also sync through the shared cursor worktree, and switching
+          // between two local threads on mainRepo pulls cursor edits instead of clobbering them.
+          const THREAD_LOCAL_1 = ThreadId.make("thread-local-1");
+          const THREAD_LOCAL_2 = ThreadId.make("thread-local-2");
+          yield* service.push({ cwd: mainRepo, threadId: THREAD_LOCAL_1, force: true });
+          yield* fs.writeFileString(
+            path.join(expectedCursorPath, "handler.go"),
+            "package edited_from_cursor_on_local\n",
+          );
+          const localSwitch = yield* service.push({
+            cwd: mainRepo,
+            threadId: THREAD_LOCAL_2,
+            autoPullPrevious: true,
+          });
+          assert.strictEqual(localSwitch.autoPulledThread?.threadId, THREAD_LOCAL_1);
+          assert.strictEqual(
+            yield* fs.readFileString(path.join(mainRepo, "handler.go")),
+            "package edited_from_cursor_on_local\n",
+          );
+          assert.strictEqual(
+            yield* fs.readFileString(path.join(expectedCursorPath, "handler.go")),
+            "package edited_from_cursor_on_local\n",
+          );
+
+          // Non-forced pull is a clean no-op when only the thread checkout changed and cursor has no edits.
+          yield* fs.writeFileString(
+            path.join(mainRepo, "handler.go"),
+            "package agent_edited_local_only\n",
+          );
+          const cleanCursorPull = yield* service.pull({ cwd: mainRepo, threadId: THREAD_LOCAL_2 });
+          assert.strictEqual(cleanCursorPull.noop, true);
+          assert.strictEqual(
+            yield* fs.readFileString(path.join(mainRepo, "handler.go")),
+            "package agent_edited_local_only\n",
+          );
         }),
       ),
   );

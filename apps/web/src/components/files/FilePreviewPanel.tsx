@@ -1621,11 +1621,11 @@ export default function FilePreviewPanel({
               compact
               revealFileManager={revealsInFileManager}
               worktreeSync={
-                threadRef && previewThreadShell?.worktreePath
+                threadRef && (previewThreadShell?.worktreePath ?? cwd)
                   ? {
                       threadId: threadRef.threadId,
                       projectId,
-                      worktreePath: previewThreadShell.worktreePath,
+                      worktreePath: previewThreadShell?.worktreePath ?? cwd,
                     }
                   : undefined
               }

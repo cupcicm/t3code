@@ -575,10 +575,10 @@ function TerminalSessionViewport({
     environmentId,
     serverConfig?.availableEditors ?? [],
     worktreePath ?? cwd,
-    worktreePath
+    (worktreePath ?? cwd)
       ? {
           threadId: threadRef.threadId,
-          worktreePath,
+          worktreePath: worktreePath ?? cwd,
         }
       : undefined,
   );

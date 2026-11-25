@@ -256,6 +256,7 @@ export async function runPushToEditorWorktreeWithConfirm(input: {
       readonly threadId: ThreadId;
       readonly projectId?: ProjectId;
       readonly force?: boolean;
+      readonly autoPullPrevious?: boolean;
     };
   }) => Promise<AtomCommandResult<VcsPushToEditorWorktreeResult, unknown>>;
   readonly onError?: (title: string, description: string) => void;
@@ -270,7 +271,7 @@ export async function runPushToEditorWorktreeWithConfirm(input: {
 
   let result = await input.pushCommand({
     environmentId: input.environmentId,
-    input: basePayload,
+    input: { ...basePayload, autoPullPrevious: true },
   });
 
   if (result._tag === "Failure") {

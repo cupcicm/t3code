@@ -333,7 +333,7 @@ describe("dedicated editor worktree push and pull", () => {
     await click(byLabel("Push to Cursor"));
     expect(state.run).toHaveBeenNthCalledWith(1, {
       environmentId: selected,
-      input: { cwd: "/worktrees/project/t3-a", threadId: threadA },
+      input: { cwd: "/worktrees/project/t3-a", threadId: threadA, autoPullPrevious: true },
     });
     expect(state.run).toHaveBeenNthCalledWith(2, {
       environmentId: selected,

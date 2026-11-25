@@ -212,11 +212,11 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                         enableShortcut={props.openInShortcutEnabled}
                         displayMode="panel"
                         worktreeSync={
-                          offersGit && props.isGitRepo && props.worktreePath
+                          offersGit && props.isGitRepo && (props.worktreePath ?? props.gitCwd)
                             ? {
                                 threadId: props.threadId,
                                 projectId: props.projectId,
-                                worktreePath: props.worktreePath,
+                                worktreePath: props.worktreePath ?? props.gitCwd,
                                 isWorking: props.isWorking,
                               }
                             : undefined

@@ -107,21 +107,49 @@ async function pushWorktreeBeforeFileOpen(input: {
   readonly threadId: ThreadId;
   readonly projectId?: ProjectId | undefined;
   readonly editorLabel: string;
-}) {
-  const [{ runAtomCommand }, { appAtomRegistry }, { vcsEnvironment }] = await Promise.all([
+}): Promise<
+  | { readonly status: "pushed"; readonly editorWorktreePath: string }
+  | { readonly status: "cancelled" }
+  | { readonly status: "fallback" }
+> {
+  const [
+    { isAtomCommandInterrupted, runAtomCommand, squashAtomCommandFailure },
+    { appAtomRegistry },
+    { vcsEnvironment },
+  ] = await Promise.all([
     import("@t3tools/client-runtime/state/runtime"),
     import("./rpc/atomRegistry"),
     import("./state/vcs"),
   ]);
-  return runPushToEditorWorktreeWithConfirm({
+  let fallback = false;
+  const pushed = await runPushToEditorWorktreeWithConfirm({
     environmentId: input.environmentId,
     cwd: input.cwd,
     threadId: input.threadId,
     projectId: input.projectId,
     editorLabel: input.editorLabel,
-    pushCommand: (args) =>
-      runAtomCommand(appAtomRegistry, vcsEnvironment.pushToEditorWorktree, args),
+    pushCommand: async (args) => {
+      const result = await runAtomCommand(
+        appAtomRegistry,
+        vcsEnvironment.pushToEditorWorktree,
+        args,
+      );
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const failure = squashAtomCommandFailure(result);
+        if (
+          typeof failure === "object" &&
+          failure !== null &&
+          "_tag" in failure &&
+          failure._tag === "GitCommandError"
+        ) {
+          fallback = true;
+        }
+      }
+      return result;
+    },
   });
+  if (pushed) return { status: "pushed", editorWorktreePath: pushed.editorWorktreePath };
+  return fallback ? { status: "fallback" } : { status: "cancelled" };
 }
 
 export function useOpenInPreferredEditor(
@@ -196,23 +224,25 @@ export function useOpenInPreferredEditor(
       }) !== null
     ) {
       const editorLabel = EDITORS.find((candidate) => candidate.id === editor)?.label ?? editor;
-      const pushed = await pushWorktreeBeforeFileOpen({
+      const pushOutcome = await pushWorktreeBeforeFileOpen({
         environmentId,
         cwd: threadWorktreePath,
         threadId: resolvedSync.threadId,
         projectId: resolvedSync.projectId,
         editorLabel,
       });
-      if (!pushed) {
+      if (pushOutcome.status === "cancelled") {
         return AsyncResult.success(editor);
       }
-      effectiveTargetPath =
-        remapPathToEditorWorktree({
-          targetPath,
-          threadWorktreePath,
-          editorWorktreePath: pushed.editorWorktreePath,
-        }) ?? pushed.editorWorktreePath;
-      effectiveProjectRoot = pushed.editorWorktreePath;
+      if (pushOutcome.status === "pushed") {
+        effectiveTargetPath =
+          remapPathToEditorWorktree({
+            targetPath,
+            threadWorktreePath,
+            editorWorktreePath: pushOutcome.editorWorktreePath,
+          }) ?? pushOutcome.editorWorktreePath;
+        effectiveProjectRoot = pushOutcome.editorWorktreePath;
+      }
     }
 
     const uri = /^file:\/\//iu.test(effectiveTargetPath)

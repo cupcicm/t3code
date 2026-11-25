@@ -1767,6 +1767,10 @@ export default function ChatView(props: ChatViewProps) {
     hostEnvironmentId,
     remoteOpenMode: remoteOpenState.mode,
   });
+  const editorSyncCwd =
+    !activeProjectIsScratch && gitStatusQuery.data?.isRepo !== false
+      ? (activeThread?.worktreePath ?? gitCwd)
+      : null;
   useOpenFavoriteEditorShortcut({
     enabled: showOpenInPicker && !backgroundThread,
     environmentId: openInEnvironmentId,
@@ -1774,11 +1778,11 @@ export default function ChatView(props: ChatViewProps) {
     availableEditors,
     openInCwd: gitCwd,
     worktreeSync:
-      activeThread?.worktreePath && gitStatusQuery.data?.isRepo !== false
+      activeThread && editorSyncCwd
         ? {
             threadId: activeThread.id,
             projectId: activeThread.projectId,
-            worktreePath: activeThread.worktreePath,
+            worktreePath: editorSyncCwd,
             isWorking,
           }
         : undefined,
@@ -1789,10 +1793,7 @@ export default function ChatView(props: ChatViewProps) {
     environmentId: openInEnvironmentId,
     threadId: activeThread?.id ?? threadId,
     projectId: activeThread?.projectId,
-    worktreePath:
-      isServerThread && activeThread?.worktreePath && gitStatusQuery.data?.isRepo !== false
-        ? activeThread.worktreePath
-        : null,
+    worktreePath: isServerThread ? editorSyncCwd : null,
     isWorking: isWorking || isPreparingWorktree || isRevertingCheckpoint,
     mutationKey: baseWorkspaceMutationId ?? null,
     canWriteSourceControl,

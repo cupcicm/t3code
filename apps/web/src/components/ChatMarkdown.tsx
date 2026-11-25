@@ -701,11 +701,12 @@ function useChatMarkdownState({
     () => {
       if (!threadRef) return undefined;
       const shell = readThreadShell(threadRef);
-      return shell?.worktreePath
+      const syncCwd = shell?.worktreePath ?? cwd;
+      return shell && syncCwd
         ? {
             threadId: threadRef.threadId,
             projectId: shell.projectId,
-            worktreePath: shell.worktreePath,
+            worktreePath: syncCwd,
           }
         : undefined;
     },

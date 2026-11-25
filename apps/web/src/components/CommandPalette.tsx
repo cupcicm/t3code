@@ -1604,14 +1604,31 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
+  const activeThreadProject = activeThread
+    ? projects.find(
+        (project) =>
+          project.environmentId === activeThread.environmentId &&
+          project.id === activeThread.projectId,
+      )
+    : undefined;
+  const activeThreadSyncCwd =
+    activeThread &&
+    activeThreadProject &&
+    !isScratchProject(
+      activeThreadProject,
+      scratchWorkspaceRootFor(activeThreadProject.environmentId),
+    )
+      ? (activeThread.worktreePath ?? activeThreadProject.workspaceRoot)
+      : (activeThread?.worktreePath ?? null);
+
   if (
     activeThread &&
-    activeThread.worktreePath != null &&
+    activeThreadSyncCwd != null &&
     palettePreferredEditor !== null &&
     palettePreferredEditor !== "file-manager"
   ) {
     const thread = activeThread;
-    const worktreePath = activeThread.worktreePath;
+    const worktreePath = activeThreadSyncCwd;
     const editorLabel = editorLabelForPlatform(
       palettePreferredEditor,
       navigator.platform,

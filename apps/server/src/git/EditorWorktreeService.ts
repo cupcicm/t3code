@@ -246,8 +246,7 @@ const make = Effect.gen(function* () {
       path.join(yield* realOrResolved(configuredParent), path.basename(mainWorktreePath));
     const editorTopLevel = path.join(repoBucketDir, EDITOR_WORKTREE_DIRECTORY_NAME);
 
-    const isLinkedWorktree =
-      topLevel !== mainWorktreePath && path.resolve(topLevel) !== path.resolve(editorTopLevel);
+    const isLinkedWorktree = path.resolve(topLevel) !== path.resolve(editorTopLevel);
 
     const relativeSubpath = path.relative(topLevel, realCwd);
     const hasNestedSubpath =
@@ -760,7 +759,7 @@ const make = Effect.gen(function* () {
           reason: "invalid_target_worktree",
           ownerThreadId: null,
           editorWorktreePath: info.editorWorktreePath,
-          detail: "Only linked worktree threads can push to the dedicated editor worktree.",
+          detail: "The dedicated editor worktree cannot push to itself.",
         });
       }
 
@@ -878,10 +877,7 @@ const make = Effect.gen(function* () {
                         });
                       }
 
-                      if (
-                        metadata.threadId === input.threadId &&
-                        resolvedPrevOwnerTop === info.topLevel
-                      ) {
+                      if (resolvedPrevOwnerTop === info.topLevel) {
                         if (snapshotsMatch(threadSnapshot, metadata)) {
                           yield* detachSymbolicHead(
                             operation,
@@ -912,8 +908,8 @@ const make = Effect.gen(function* () {
                               created: false,
                               headSha: editorSnapshot.headSha,
                               autoPulledThread: {
-                                threadId: input.threadId,
-                                cwd: input.cwd,
+                                threadId: metadata.threadId,
+                                cwd: metadata.requestedThreadCwd ?? input.cwd,
                                 headSha: editorSnapshot.headSha,
                                 branch: pulledBranch,
                               },
@@ -1157,7 +1153,7 @@ const make = Effect.gen(function* () {
           reason: "invalid_target_worktree",
           ownerThreadId: null,
           editorWorktreePath: info.editorWorktreePath,
-          detail: "Only linked worktree threads can pull from the dedicated editor worktree.",
+          detail: "The dedicated editor worktree cannot pull into itself.",
         });
       }
 
@@ -1226,11 +1222,7 @@ const make = Effect.gen(function* () {
                   path.relative(info.editorTopLevel, info.editorWorktreePath),
                 );
 
-          if (
-            input.force !== true &&
-            snapshotsMatch(editorSnapshot, metadata) &&
-            snapshotsMatch(threadSnapshot, metadata)
-          ) {
+          if (input.force !== true && snapshotsMatch(editorSnapshot, metadata)) {
             const symbolic = yield* runGit(
               operation,
               info.topLevel,

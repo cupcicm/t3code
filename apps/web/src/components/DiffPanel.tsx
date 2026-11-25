@@ -269,11 +269,11 @@ export default function DiffPanel({
     activeThread?.environmentId ?? null,
     serverConfig?.availableEditors ?? [],
     activeCwd,
-    activeThread?.worktreePath
+    activeThread && activeCwd
       ? {
           threadId: activeThread.id,
           projectId: activeThread.projectId,
-          worktreePath: activeThread.worktreePath,
+          worktreePath: activeCwd,
         }
       : undefined,
   );
