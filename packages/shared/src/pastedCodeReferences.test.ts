@@ -134,6 +134,30 @@ describe("extractPastedCodeReferences", () => {
       "L10 to L25",
       "my file.tsx L10 to L25",
     ],
+    [
+      "[/Users/alice/repo/src/components/Button.tsx:11-17](/Users/alice/repo/src/components/Button.tsx:11)",
+      "src/components/Button.tsx",
+      10,
+      16,
+      "L11 to L17",
+      "Button.tsx L11 to L17",
+    ],
+    [
+      "[Button.tsx:11-17](/Users/alice/repo/src/components/Button.tsx:11)",
+      "src/components/Button.tsx",
+      10,
+      16,
+      "L11 to L17",
+      "Button.tsx L11 to L17",
+    ],
+    [
+      "[Button.tsx](/Users/alice/repo/src/components/Button.tsx:11-17)",
+      "src/components/Button.tsx",
+      10,
+      16,
+      "L11 to L17",
+      "Button.tsx L11 to L17",
+    ],
   ])("parses %s", (input, filePath, startIndex, endIndex, rangeLabel, label) => {
     const result = extractPastedCodeReferences(input, { cwd: "/Users/alice/repo" });
     expect(result.records).toHaveLength(1);
@@ -200,19 +224,20 @@ describe("extractPastedCodeReferences", () => {
     );
   });
 
-  it("parses inline @ references inside prose while preserving trailing punctuation", () => {
+  it("parses inline @ references and Markdown file links inside prose while preserving trailing punctuation", () => {
     const result = extractPastedCodeReferences(
-      "Look at @src/a.ts:10-20, and compare with @src/b.ts#L5.",
+      "Look at @src/a.ts:10-20, [b.ts:5-8](src/b.ts:5), and @src/c.ts#L5.",
     );
-    expect(result.records).toHaveLength(2);
+    expect(result.records).toHaveLength(3);
     expect(result.text).toBe(
-      `Look at [a.ts L10 to L20](t3-context://v1/review-comment/${result.records[0]!.contextId}), and compare with [b.ts L5](t3-context://v1/review-comment/${result.records[1]!.contextId}).`,
+      `Look at [a.ts L10 to L20](t3-context://v1/review-comment/${result.records[0]!.contextId}), [b.ts L5 to L8](t3-context://v1/review-comment/${result.records[1]!.contextId}), and [c.ts L5](t3-context://v1/review-comment/${result.records[2]!.contextId}).`,
     );
   });
 
   it("leaves ordinary code fences, stack traces, URLs, ports, and prose untouched", () => {
     const samples = [
       "https://example.com:8080/src/app.ts",
+      "[src/app.ts:10-20](https://github.com/org/repo/blob/main/src/app.ts#L10-L20)",
       "http://localhost:3000",
       "127.0.0.1:8080",
       "12:30",

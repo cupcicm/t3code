@@ -128,7 +128,79 @@ export function normalizeCodeReferencePath(rawPath: string, cwd?: string): strin
   return path;
 }
 
+const MARKDOWN_LINK_REGEX = /^\[([^\]]+)\]\(([^)\s]+)\)$/;
+
+function parseMarkdownCodeReferenceLink(
+  labelRaw: string,
+  targetRaw: string,
+  cwd?: string,
+): Omit<ParsedPastedCodeReference, "code" | "fenceLanguage"> | null {
+  const target = parseSingleBareCodeReference(targetRaw, cwd);
+  const label = parseSingleBareCodeReference(labelRaw, cwd);
+
+  // Never hijack non-file web/T3 links (e.g. [src/a.ts:10-20](https://github.com/...)).
+  if (!target) {
+    const cleanTarget = targetRaw.trim();
+    const isLocalPathWithoutLine =
+      !cleanTarget.startsWith("t3-") &&
+      (isPlausibleCodeFilePath(normalizeCodeReferencePath(cleanTarget, cwd)) ||
+        EDITOR_FILE_URI_REGEX.test(cleanTarget) ||
+        /^file:\/\//i.test(cleanTarget));
+    if (!isLocalPathWithoutLine || !label) return null;
+    const normalizedTargetPath = normalizeCodeReferencePath(
+      EDITOR_FILE_URI_REGEX.test(cleanTarget)
+        ? stripSlashPrefixedWindowsDrive(
+            safeDecodeUriPath(cleanTarget.replace(EDITOR_FILE_URI_REGEX, "$1").split("#")[0] ?? ""),
+          )
+        : /^file:\/\//i.test(cleanTarget)
+          ? safeDecodeUriPath(parseFileUrlHref(cleanTarget)?.path ?? "")
+          : cleanTarget,
+      cwd,
+    );
+    return {
+      filePath: isPlausibleCodeFilePath(normalizedTargetPath)
+        ? normalizedTargetPath
+        : label.filePath,
+      startLine: label.startLine,
+      endLine: label.endLine,
+    };
+  }
+
+  // When target only carries `:startLine` (click-to-jump) while the label carries `:startLine-endLine`
+  // for the same file, keep target's full path and the label's full line range.
+  if (
+    label &&
+    fileBasename(label.filePath) === fileBasename(target.filePath) &&
+    target.endLine === target.startLine &&
+    label.endLine > label.startLine &&
+    label.startLine === target.startLine
+  ) {
+    return {
+      filePath: target.filePath,
+      startLine: label.startLine,
+      endLine: label.endLine,
+    };
+  }
+
+  return target;
+}
+
 function parseSingleCodeReference(
+  rawToken: string,
+  cwd?: string,
+): Omit<ParsedPastedCodeReference, "code" | "fenceLanguage"> | null {
+  const trimmed = rawToken.trim();
+  if (!trimmed) return null;
+
+  const mdLink = trimmed.match(MARKDOWN_LINK_REGEX);
+  if (mdLink?.[1] && mdLink[2]) {
+    return parseMarkdownCodeReferenceLink(mdLink[1], mdLink[2], cwd);
+  }
+
+  return parseSingleBareCodeReference(trimmed, cwd);
+}
+
+function parseSingleBareCodeReference(
   rawToken: string,
   cwd?: string,
 ): Omit<ParsedPastedCodeReference, "code" | "fenceLanguage"> | null {
@@ -248,22 +320,20 @@ function extractStandaloneLineHeaderRef(
 ): Omit<ParsedPastedCodeReference, "code" | "fenceLanguage"> | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
-  // Also accept a markdown link header like `[src/foo.ts:10-25](file:///...)`
-  const mdLink = trimmed.match(/^\[([^\]]+)\]\(([^)\s]+)\)$/);
-  if (mdLink?.[1] && mdLink[2]) {
-    return parseSingleCodeReference(mdLink[2], cwd) ?? parseSingleCodeReference(mdLink[1], cwd);
-  }
   return parseSingleCodeReference(trimmed, cwd);
 }
 
-// Inline intentional references: @-prefixed tokens or cursor:// / vscode:// / file:// URIs.
+// Inline intentional references: @-prefixed tokens, editor/file URIs, or Markdown file:line links.
 const INLINE_INTENTIONAL_REF_REGEX =
-  /(^|[\s([{"'])(@(?:"(?:\\.|[^"\\])*"(?:[:#][^\s,;)}"']*)?|[^\s@"'<>()[\]{}]+)|(?:cursor|vscode|vscode-insiders|windsurf):\/\/file\/[^\s"'<>()[\]{}]+|file:\/\/[^\s"'<>()[\]{}]+)/gi;
+  /(^|[\s([{"'])(\[[^[\]\r\n]{1,512}\]\([^)\s]{1,2048}\)|@(?:"(?:\\.|[^"\\])*"(?:[:#][^\s,;)}"']*)?|[^\s@"'<>()[\]{}]+)|(?:cursor|vscode|vscode-insiders|windsurf):\/\/file\/[^\s"'<>()[\]{}]+|file:\/\/[^\s"'<>()[\]{}]+)/gi;
 
 function trimTrailingSentencePunctuation(token: string): {
   readonly candidate: string;
   readonly suffix: string;
 } {
+  if (token.startsWith("[") && token.endsWith(")")) {
+    return { candidate: token, suffix: "" };
+  }
   let end = token.length;
   while (end > 0 && /[.,;!?)\]}]/.test(token[end - 1]!)) {
     end -= 1;
