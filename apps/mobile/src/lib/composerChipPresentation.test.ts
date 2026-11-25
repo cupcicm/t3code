@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { contextChipAccent, contextChipPresentation } from "./composerChipPresentation";
+import {
+  contextChipAccent,
+  contextChipPresentation,
+  contextRecordFileName,
+} from "./composerChipPresentation";
 import {
   flattenThemeColor,
   getMobileThemeVariables,
@@ -112,5 +116,14 @@ describe("contextChipAccent", () => {
 describe("contextChipPresentation", () => {
   it("draws a mentioned machine as a machine, not the generic file chip", () => {
     expect(contextChipPresentation("environment")).toEqual({ accent: "#3f9a4f", icon: "server" });
+  });
+
+  it("draws code-reference review comments with the file mention accent and file icon", () => {
+    expect(
+      contextChipPresentation("review-comment", {
+        sectionId: "code-reference:src/App.tsx",
+      }),
+    ).toEqual(contextChipPresentation("mention"));
+    expect(contextRecordFileName({ filePath: "src/App.tsx" })).toBe("src/App.tsx");
   });
 });

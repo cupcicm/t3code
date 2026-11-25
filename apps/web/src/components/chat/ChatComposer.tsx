@@ -55,6 +55,7 @@ import { formatComposerModelMention } from "@t3tools/client-runtime/composer-mod
 import { isPasteAsTextShortcut } from "@t3tools/client-runtime/text-paste";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import { splitFilePathPosition } from "@t3tools/shared/fileLinks";
 import { type FolderDropTarget, folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
 import { splitTransferredFiles } from "./workspaceFileDrop";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
@@ -735,7 +736,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (preview) onExpandImage(preview);
     },
     openFile: setPreviewFileId,
-    openMention: (path: string) => useRightPanelStore.getState().openFile(routeThreadRef, path),
+    openMention: (path: string) => {
+      const position = splitFilePathPosition(path);
+      useRightPanelStore.getState().openFile(routeThreadRef, position.path, position.line);
+    },
     expandVideo: (fileId: string) => {
       const file = composerFiles.find((candidate) => candidate.id === fileId);
       if (!file || !isVideoAttachment(file)) return;
@@ -1396,6 +1400,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     importContextFragmentStable,
   } = useComposerContextImport({
     environmentId,
+    cwd: gitCwd ?? undefined,
     linkedEnvironments,
     activeThread,
     activeThreadId,
@@ -2655,7 +2660,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return false;
     }
     if (options?.clipboardData) {
-      text = importPastedComposerText(options.clipboardData, importContextFragment);
+      text = importPastedComposerText(options.clipboardData, importContextFragment, {
+        cwd: gitCwd ?? undefined,
+        environmentId,
+      });
     }
     const prompt = promptRef.current;
     const cursor = position === "cursor" ? readComposerSnapshot().expandedCursor : prompt.length;
@@ -2831,7 +2839,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const bypassAutoAttachment = consumePasteAsTextShortcut(pasteAsTextShortcutUntilRef);
     const pastedContext =
       !isLiteralPendingAnswer &&
-      (readPastedComposerContext(event.clipboardData)?.records.length ?? 0) > 0;
+      (readPastedComposerContext(event.clipboardData, {
+        cwd: gitCwd ?? undefined,
+        environmentId,
+      })?.records.length ?? 0) > 0;
     if (
       folders.length > 0 ||
       (!pastedContext &&

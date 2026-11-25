@@ -10,11 +10,15 @@ import * as Schema from "effect/Schema";
 import type { RefObject } from "react";
 import type { ChatComposerProps } from "./ChatComposer";
 import {
+  AuthFilesystemReadScope,
+  COMPOSER_CONTEXT_REVIEW_DIFF_MAX_CHARS,
   type ComposerContextClipboardFragment,
   type ComposerContextRecord,
   type EnvironmentId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
 } from "@t3tools/contracts";
+import { isCodeReferenceContext } from "@t3tools/shared/pastedCodeReferences";
+import { isAbsolutePath } from "@t3tools/shared/path";
 import {
   type ComposerFileAttachment,
   type ComposerImageAttachment,
@@ -47,9 +51,14 @@ import { orchestrationEnvironment } from "~/state/orchestration";
 import { pendingDraftWork } from "./pendingDraftWork";
 import { readComposerImageBytes } from "./composerAttachmentFiles";
 import { randomUUID } from "~/lib/utils";
-import { readPreparedConnection } from "~/state/session";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { projectEnvironment } from "~/state/projects";
+import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
+import { readEnvironmentScope, readPreparedConnection } from "~/state/session";
 import { resolveAssetUrl } from "~/assets/assetUrls";
 import { toKindScopedComposerContextId } from "@t3tools/shared/composerContextReferences";
+import { getProjectFileContents } from "../files/projectFilesQueryState";
+import type { ReviewCommentContext } from "~/reviewCommentContext";
 import { toastManager } from "../ui/toast";
 import {
   type ComposerDraftContextRecords,
@@ -73,12 +82,26 @@ async function downloadAttachmentBlob(url: string): Promise<Blob | null> {
   }
 }
 
+const CODE_REF_TRUNCATION_MARKER = "\n… truncated …";
+
+function sliceCodeReferenceLines(contents: string, startIndex: number, endIndex: number): string {
+  const lines = contents.replace(/\r\n?/g, "\n").split("\n");
+  if (startIndex < 0 || startIndex >= lines.length) return "";
+  const sliced = lines.slice(startIndex, Math.min(lines.length, endIndex + 1)).join("\n");
+  if (sliced.length <= COMPOSER_CONTEXT_REVIEW_DIFF_MAX_CHARS) return sliced;
+  let end = Math.max(0, COMPOSER_CONTEXT_REVIEW_DIFF_MAX_CHARS - CODE_REF_TRUNCATION_MARKER.length);
+  const last = sliced.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${sliced.slice(0, end)}${CODE_REF_TRUNCATION_MARKER}`;
+}
+
 /**
  * Imports copied composer context (terminal output, review comments, annotations, threads,
  * images and files) into the open draft, and counts the attachment slots already spoken for.
  */
 export function useComposerContextImport(input: {
   readonly environmentId: EnvironmentId;
+  readonly cwd?: string | undefined;
   readonly linkedEnvironments: ReadonlyMap<EnvironmentId, string>;
   readonly activeThread: ChatComposerProps["activeThread"];
   readonly activeThreadId: ChatComposerProps["activeThreadId"];
@@ -97,6 +120,7 @@ export function useComposerContextImport(input: {
 }) {
   const {
     environmentId,
+    cwd,
     linkedEnvironments,
     activeThread,
     activeThreadId,
@@ -289,6 +313,41 @@ export function useComposerContextImport(input: {
       pendingDraftWork.end(importTargetKey),
     );
   };
+  const hydrateCodeReference = async (comment: ReviewCommentContext, importTargetKey: string) => {
+    if (!cwd || isAbsolutePath(comment.filePath) || comment.filePath.startsWith("..")) return;
+    if (!readEnvironmentScope(environmentId, AuthFilesystemReadScope)) return;
+    pendingDraftWork.begin(importTargetKey);
+    try {
+      const result = await executeAtomQuery(
+        appAtomRegistry,
+        projectEnvironment.readFile({
+          environmentId,
+          input: { cwd, relativePath: comment.filePath },
+        }),
+        { label: "Read referenced code lines", reportFailure: false },
+      );
+      if (result._tag !== "Success") return;
+      if (attachmentTargetKeyRef.current !== importTargetKey) return;
+      const current = getComposerDraft(composerDraftTarget)?.reviewComments.find(
+        (candidate) => candidate.id === comment.id,
+      );
+      if (!current || current.diff.length > 0) return;
+      const diff = sliceCodeReferenceLines(
+        result.value.contents,
+        current.startIndex,
+        current.endIndex,
+      );
+      if (!diff) return;
+      addComposerDraftReviewComment(
+        composerDraftTarget,
+        { ...current, diff },
+        { appendReference: false },
+      );
+    } finally {
+      pendingDraftWork.end(importTargetKey);
+    }
+  };
+
   const importContextRecords = (
     records: ReadonlyArray<ComposerContextRecord>,
     sourceEnvironmentId: EnvironmentId | null,
@@ -347,14 +406,23 @@ export function useComposerContextImport(input: {
                 : existing
                   ? (uploadedContextRecordFromDraft(existing) ?? undefined)
                   : undefined;
+      const matchesHydratedCodeReference =
+        existingRecord?.kind === "review-comment" &&
+        record.kind === "review-comment" &&
+        isCodeReferenceContext(record) &&
+        record.diff === "" &&
+        existingRecord.sectionId === record.sectionId &&
+        existingRecord.startIndex === record.startIndex &&
+        existingRecord.endIndex === record.endIndex;
       if (
         existingRecord &&
-        isSameComposerContextPayload(existingRecord, record) &&
+        (isSameComposerContextPayload(existingRecord, record) || matchesHydratedCodeReference) &&
         record.kind !== "thread"
       ) {
         if (record.kind === "preview-annotation" && record.screenshotContextId) {
           skippedDependentAttachmentIds.add(record.screenshotContextId);
         }
+        rewritten.set(record.contextId, existingRecord.contextId);
         continue;
       }
       const conflicts = existing !== undefined;
@@ -372,11 +440,28 @@ export function useComposerContextImport(input: {
         }
         case "review-comment": {
           const imported = reviewCommentFromRecord(record);
-          const comment = conflicts ? { ...imported, id: randomUUID() } : imported;
+          const cachedContents =
+            isCodeReferenceContext(imported) &&
+            imported.diff === "" &&
+            cwd &&
+            !isAbsolutePath(imported.filePath)
+              ? getProjectFileContents(environmentId, cwd, imported.filePath)
+              : undefined;
+          const hydratedDiff =
+            cachedContents !== undefined
+              ? sliceCodeReferenceLines(cachedContents, imported.startIndex, imported.endIndex)
+              : imported.diff;
+          const comment = {
+            ...(conflicts ? { ...imported, id: randomUUID() } : imported),
+            diff: hydratedDiff,
+          };
           addComposerDraftReviewComment(composerDraftTarget, comment, {
             appendReference: false,
           });
           rewritten.set(record.contextId, reviewCommentContextId(comment.id));
+          if (isCodeReferenceContext(comment) && comment.diff === "") {
+            void hydrateCodeReference(comment, attachmentTargetKey);
+          }
           break;
         }
         case "element":

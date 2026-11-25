@@ -1,4 +1,5 @@
 import { threadContextRecord } from "@t3tools/shared/composerContextReferences";
+import { extractPastedCodeReferences } from "@t3tools/shared/pastedCodeReferences";
 import { useEffect } from "react";
 import {
   type ComposerContextRecord,
@@ -15,6 +16,10 @@ import { rememberCopiedComposerAttachments } from "../../lib/copiedComposerAttac
 import { pendingDraftWork } from "./pendingDraftWork";
 import { useComposerContextImport } from "./useComposerContextImport";
 
+const { executeAtomQueryMock } = vi.hoisted(() => ({
+  executeAtomQueryMock: vi.fn(),
+}));
+
 vi.mock("~/state/use-atom-query-runner", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/state/use-atom-query-runner")>()),
   useAtomQueryRunner: () => async () => ({ _tag: "Success", value: { relativeUrl: "/file" } }),
@@ -26,6 +31,11 @@ vi.mock("../../state/use-atom-command", async (importOriginal) => ({
 vi.mock("~/state/session", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/state/session")>()),
   readPreparedConnection: () => ({ httpBaseUrl: "http://localhost" }),
+  readEnvironmentScope: () => true,
+}));
+vi.mock("@t3tools/client-runtime/state/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@t3tools/client-runtime/state/runtime")>()),
+  executeAtomQuery: (...args: unknown[]) => executeAtomQueryMock(...args),
 }));
 
 type ImportInput = Parameters<typeof useComposerContextImport>[0];
@@ -274,3 +284,98 @@ it.each(["same", "other-environment"] as const)(
     expect(store.getComposerDraft(target)!.threadContexts).toEqual(records);
   },
 );
+
+it("hydrates pasted code-reference lines from the workspace and reuses them on repeat paste", async () => {
+  executeAtomQueryMock.mockReset();
+  const target = DraftId.make("code-ref-hydrate");
+  const store = useComposerDraftStore.getState();
+  using _draft = { [Symbol.dispose]: () => store.clearComposerContent(target) };
+  const environmentId = EnvironmentId.make("code-ref-env");
+  const fileRead = deferred<{ _tag: "Success"; value: { contents: string } }>();
+  const settled = deferred<void>();
+  executeAtomQueryMock.mockImplementation(() => fileRead.promise);
+
+  const end = pendingDraftWork.end.bind(pendingDraftWork);
+  using _settled = vi.spyOn(pendingDraftWork, "end").mockImplementation((key) => {
+    end(key);
+    settled.resolve();
+  });
+
+  let importer!: Importer;
+  const makeInput = () => {
+    const draft = store.getComposerDraft(target);
+    return {
+      environmentId,
+      cwd: "/repo",
+      linkedEnvironments: new Map(),
+      activeThread: undefined,
+      activeThreadId: null,
+      composerDraftTarget: target,
+      attachmentDraftTarget: target,
+      attachmentTargetKey: target,
+      attachmentTargetKeyRef: { current: target },
+      questionAttachmentTarget: null,
+      pendingUserInputs: [],
+      composerContextRecords: new Map(
+        (draft?.reviewComments ?? []).map((comment) => [
+          ComposerContextId.make(`review-comment_${comment.id}`),
+          { kind: "review-comment" as const, record: comment },
+        ]),
+      ),
+      composerImages: [],
+      composerFilesRef: { current: [] },
+      pendingThreadImportsRef: { current: new Map() },
+      promptRef: { current: "" },
+      addComposerFilesToDraft: () => [],
+    } satisfies ImportInput;
+  };
+
+  await using screen = await render(
+    <Harness
+      input={makeInput()}
+      ready={(value) => {
+        importer = value;
+      }}
+    />,
+  );
+
+  const extracted = extractPastedCodeReferences("@src/app.ts:2-3", { cwd: "/repo" });
+  const record = extracted.records[0]!;
+  let firstId: string | undefined;
+  await act(() => {
+    firstId = importer.importContextRecords([record], environmentId).get(record.contextId);
+  });
+  expect(firstId).toBe(record.contextId);
+  expect(pendingDraftWork.has(target)).toBe(true);
+  expect(store.getComposerDraft(target)!.reviewComments).toHaveLength(1);
+  expect(store.getComposerDraft(target)!.reviewComments[0]?.diff).toBe("");
+
+  await act(async () => {
+    fileRead.resolve({
+      _tag: "Success",
+      value: { contents: "line 1\nconst a = 1;\nconst b = 2;\nline 4" },
+    });
+    await settled.promise;
+  });
+
+  expect(pendingDraftWork.has(target)).toBe(false);
+  expect(store.getComposerDraft(target)!.reviewComments[0]?.diff).toBe(
+    "const a = 1;\nconst b = 2;",
+  );
+
+  await screen.rerender(
+    <Harness
+      input={makeInput()}
+      ready={(value) => {
+        importer = value;
+      }}
+    />,
+  );
+  let secondId: string | undefined;
+  await act(() => {
+    secondId = importer.importContextRecords([record], environmentId).get(record.contextId);
+  });
+  expect(secondId).toBe(firstId);
+  expect(executeAtomQueryMock).toHaveBeenCalledTimes(1);
+  expect(store.getComposerDraft(target)!.reviewComments).toHaveLength(1);
+});

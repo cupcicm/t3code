@@ -1,7 +1,8 @@
 import { msg, T, useGT, useMessages } from "gt-react";
 import type { MessageResolver } from "~/i18n/messages";
 import { useNativeFileDrag } from "../../useNativeFileDrag";
-import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
+import { resolvePathLinkTarget, splitFilePathPosition } from "@t3tools/shared/fileLinks";
+import { isCodeReferenceContext } from "@t3tools/shared/pastedCodeReferences";
 import { documentChipKindForFileName } from "~/pierre-icons";
 import { isSvgAttachment } from "@t3tools/shared/image";
 import { useRenderedAppearance } from "../../hooks/useTheme";
@@ -90,8 +91,9 @@ function UserMessageMentionChip(props: {
             aria-label={gt("Preview {name}", { name: props.record.path })}
             data-markdown-copy={props.copyMarkdown}
             onClick={() => {
-              if (ctx.threadRef)
-                useRightPanelStore.getState().openFile(ctx.threadRef, props.record.path);
+              if (!ctx.threadRef) return;
+              const position = splitFilePathPosition(props.record.path);
+              useRightPanelStore.getState().openFile(ctx.threadRef, position.path, position.line);
             }}
           >
             <WorkspaceEntryIcon
@@ -482,10 +484,13 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
           return <UnavailableUserMessageContextChip {...context} />;
         }
         const isPullRequest = isPullRequestSummaryContext(record);
+        const isCodeRef = isCodeReferenceContext(record);
         const label = reviewCommentContextLabel(record, context.m);
         const kindLabel = isPullRequest
           ? pullRequestContextKindLabel(record, context.m)
-          : context.m(msg("Review comment"));
+          : isCodeRef
+            ? context.m(msg("Code reference"))
+            : context.m(msg("Review comment"));
         const pullRequestState = pullRequestContextDisplayState(record) ?? "unknown";
         if (isPullRequest && record.pullRequest !== undefined) {
           return (
@@ -510,8 +515,26 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
                   )
                 : context.m(msg("{kind}, {label}", { kind: kindLabel, label }))
             }
-            kind={isPullRequest ? PULL_REQUEST_CHIP_KINDS[pullRequestState] : "review-comment"}
-            icon={isPullRequest ? <PullRequestGlyph.pullRequest /> : <MessageCircleIcon />}
+            kind={
+              isPullRequest
+                ? PULL_REQUEST_CHIP_KINDS[pullRequestState]
+                : isCodeRef
+                  ? (documentChipKindForFileName(record.filePath) ?? "mention")
+                  : "review-comment"
+            }
+            icon={
+              isPullRequest ? (
+                <PullRequestGlyph.pullRequest />
+              ) : isCodeRef ? (
+                <WorkspaceEntryIcon
+                  path={record.filePath}
+                  environmentId={context.environmentId}
+                  theme={context.resolvedTheme}
+                />
+              ) : (
+                <MessageCircleIcon />
+              )
+            }
             label={label}
           >
             <UserMessageReviewCommentCard
@@ -602,9 +625,24 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
   return (
     <div className="space-y-2 rounded-lg border border-border/70 bg-background/70 p-3">
       <div className="space-y-1">
-        <div className="text-xs font-medium text-foreground">
-          {formatWorkspaceRelativePath(comment.filePath, ctx.workspaceRoot)}
-        </div>
+        {ctx.threadRef && !isPullRequestSummaryContext(comment) ? (
+          <button
+            type="button"
+            className="block max-w-full cursor-pointer truncate text-left text-xs font-medium text-foreground hover:underline"
+            onClick={() => {
+              if (!ctx.threadRef) return;
+              useRightPanelStore
+                .getState()
+                .openFile(ctx.threadRef, comment.filePath, comment.startIndex + 1);
+            }}
+          >
+            {formatWorkspaceRelativePath(comment.filePath, ctx.workspaceRoot)}
+          </button>
+        ) : (
+          <div className="text-xs font-medium text-foreground">
+            {formatWorkspaceRelativePath(comment.filePath, ctx.workspaceRoot)}
+          </div>
+        )}
         <div className="text-2xs text-muted-foreground">
           {reviewCommentSectionText(comment.sectionTitle, m)} ·{" "}
           {reviewCommentRangeText(comment.rangeLabel, m)}

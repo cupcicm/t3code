@@ -1,5 +1,6 @@
 import ChatMarkdown from "./ChatMarkdown";
 import { isSvgAttachment } from "@t3tools/shared/image";
+import { isCodeReferenceContext } from "@t3tools/shared/pastedCodeReferences";
 import { ReadOnlySourcePreview } from "./files/AttachmentFilePreview";
 import type {
   EnvironmentContextRecord,
@@ -40,7 +41,9 @@ import {
 } from "~/lib/composerContextRecords";
 import type { TerminalContextDraft } from "~/lib/terminalContext";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
+import { documentChipKindForFileName } from "~/pierre-icons";
 import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTerminalContexts";
+import { WorkspaceEntryIcon } from "./chat/WorkspaceEntryIcon";
 import { EnvironmentContextChip } from "./EnvironmentContextChip";
 import { ThreadContextChip } from "./ThreadContextChip";
 import { useLinkedEnvironments } from "~/state/peerLinks";
@@ -296,18 +299,38 @@ function ReviewCommentContextChip(props: {
   kind: ContextChipKind;
 }) {
   const messages = useMessages();
+  const actions = use(ComposerContextActionsContext);
+  const { resolvedTheme } = useTheme();
+  const isCodeRef = isCodeReferenceContext(props.record);
   return (
     <ContextChip
-      icon={props.isPullRequest ? <PullRequestGlyph.pullRequest /> : <MessageCircleIcon />}
+      icon={
+        props.isPullRequest ? (
+          <PullRequestGlyph.pullRequest />
+        ) : isCodeRef ? (
+          <WorkspaceEntryIcon
+            path={props.record.filePath}
+            environmentId={actions.environmentId}
+            cwd={actions.cwd}
+            theme={resolvedTheme}
+          />
+        ) : (
+          <MessageCircleIcon />
+        )
+      }
       label={reviewCommentContextLabel(props.record, messages)}
       kindLabel={
         props.isPullRequest
           ? pullRequestContextKindLabel(props.record, messages)
-          : msg("Review comment")
+          : isCodeRef
+            ? msg("Code reference")
+            : msg("Review comment")
       }
       details={<ComposerReviewCommentDetails comment={props.record} />}
       detailsMode={props.detailsMode}
-      kind={props.kind}
+      kind={
+        isCodeRef ? (documentChipKindForFileName(props.record.filePath) ?? "mention") : props.kind
+      }
     />
   );
 }
@@ -362,10 +385,24 @@ function previewAnnotationTooltip(
 
 function ComposerReviewCommentDetails({ comment }: { comment: ReviewCommentContext }) {
   const messages = useMessages();
+  const actions = use(ComposerContextActionsContext);
+  const previewFileName =
+    comment.fenceLanguage && comment.fenceLanguage !== "diff" ? comment.filePath : "review.diff";
+  const canOpenFile = !isPullRequestSummaryContext(comment);
   return (
     <div className="space-y-2 overflow-hidden rounded-lg border border-border/70 bg-background/70 p-3">
       <div className="space-y-1">
-        <div className="truncate text-xs font-medium text-foreground">{comment.filePath}</div>
+        {canOpenFile ? (
+          <button
+            type="button"
+            className="block max-w-full cursor-pointer truncate text-left text-xs font-medium text-foreground hover:underline"
+            onClick={() => actions.openMention(`${comment.filePath}:${comment.startIndex + 1}`)}
+          >
+            {comment.filePath}
+          </button>
+        ) : (
+          <div className="truncate text-xs font-medium text-foreground">{comment.filePath}</div>
+        )}
         <div className="text-secondary-label text-2xs">
           {reviewCommentSectionText(comment.sectionTitle, messages)} ·{" "}
           {reviewCommentRangeText(comment.rangeLabel, messages)}
@@ -374,7 +411,7 @@ function ComposerReviewCommentDetails({ comment }: { comment: ReviewCommentConte
       {comment.text.trim() ? <ChatMarkdown text={comment.text.trim()} cwd={undefined} /> : null}
       {comment.diff.trim() ? (
         <div className="flex h-64 min-h-0 flex-col overflow-hidden rounded-md border border-border">
-          <ReadOnlySourcePreview name="review.diff" text={comment.diff} />
+          <ReadOnlySourcePreview name={previewFileName} text={comment.diff} />
         </div>
       ) : null}
     </div>

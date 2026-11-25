@@ -983,6 +983,8 @@ function ComposerPromptEditorTiptapInner(
     literalText ? position : expandCollapsedComposerCursor(text, position);
 
   const latestValueRef = useRef(value);
+  const { environmentId, cwd } = use(ComposerContextActionsContext);
+  const modelKeys = useAtomValue(modelMentionKeysAtom(environmentId ?? ""));
   // The editor config is built once, so its handlers reach the current callbacks through here.
   const readCallbacks = useStableCallback(() => ({
     onChange,
@@ -990,10 +992,9 @@ function ComposerPromptEditorTiptapInner(
     onCommandKeyDown,
     isPathQueryActive,
     importContextFragment,
+    cwd,
+    environmentId,
   }));
-
-  const { environmentId } = use(ComposerContextActionsContext);
-  const modelKeys = useAtomValue(modelMentionKeysAtom(environmentId ?? ""));
   // Stable so a skills or models refresh does not rerun the controlled-value effect.
   const skillLabelFor = useStableCallback((name: string) => composerSkillMeta(skills, name));
   const isKnownModel = useStableCallback((instanceId: string, model: string) =>
@@ -1412,9 +1413,14 @@ function ComposerPromptEditorTiptapInner(
         handlePaste: (view, event) => {
           const clipboardData = event.clipboardData;
           if (!clipboardData) return false;
+          const callbacks = readCallbacks();
+          const pasteOptions = {
+            cwd: callbacks.cwd,
+            environmentId: callbacks.environmentId ?? undefined,
+          };
           if (
             clipboardData.files.length > 0 &&
-            (literalText || !readPastedComposerContext(clipboardData)?.records.length)
+            (literalText || !readPastedComposerContext(clipboardData, pasteOptions)?.records.length)
           )
             return false;
           const pastedText = readPastedPlainText(clipboardData);
@@ -1447,10 +1453,10 @@ function ComposerPromptEditorTiptapInner(
             );
             return true;
           }
-          const importFragment = readCallbacks().importContextFragment;
+          const importFragment = callbacks.importContextFragment;
           let text =
             !literalText && importFragment
-              ? importPastedComposerText(clipboardData, importFragment)
+              ? importPastedComposerText(clipboardData, importFragment, pasteOptions)
               : pastedText;
           const tokens = literalText ? [] : collectComposerPromptInlineTokens(`${text}\n`);
           const isChip = (token: (typeof tokens)[number] | undefined) =>
