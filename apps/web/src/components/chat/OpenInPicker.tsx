@@ -13,6 +13,7 @@ import { shortcutLabelForCommand } from "../../keybindings";
 import { OPEN_FAVORITE_EDITOR_ATTRIBUTE } from "./OpenInPickerShortcut";
 import { usePreferredEditor } from "../../editorPreferences";
 import { editorLabelForPlatform } from "../../editorLabels";
+import { type EditorWorktreeSyncTarget, useEditorWorktreeActions } from "../../editorWorktreeSync";
 import type { MessageResolver } from "../../i18n/messages";
 import {
   openRemoteEditorUrl,
@@ -21,7 +22,12 @@ import {
   useRemoteOpenState,
 } from "../../remoteOpen";
 import { useEnvironment } from "../../state/environments";
-import { ChevronDownIcon, FolderClosedIcon, SquareArrowOutUpRightIcon } from "lucide-react";
+import {
+  ArrowDownToLineIcon,
+  ChevronDownIcon,
+  FolderClosedIcon,
+  SquareArrowOutUpRightIcon,
+} from "lucide-react";
 
 import { Group, GroupSeparator } from "../ui/group";
 import {
@@ -29,12 +35,14 @@ import {
   MenuItem,
   MenuItemLabel,
   MenuPopup,
+  MenuSeparator,
   MenuShortcut,
   MenuSub,
   MenuSubTrigger,
   MenuSubPopup,
   MenuTrigger,
 } from "../ui/menu";
+import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   AntigravityIcon,
@@ -224,6 +232,7 @@ export const OpenInPicker = memo(function OpenInPicker({
   enableShortcut = true,
   displayMode = "toolbar",
   revealFileManager = false,
+  worktreeSync,
 }: {
   environmentId: EnvironmentId;
   keybindings: ResolvedKeybindingsConfig;
@@ -235,6 +244,7 @@ export const OpenInPicker = memo(function OpenInPicker({
   enableShortcut?: boolean;
   displayMode?: "toolbar" | "panel";
   revealFileManager?: boolean;
+  worktreeSync?: EditorWorktreeSyncTarget | undefined;
 }) {
   const gt = useGT();
   const messages = useMessages();
@@ -254,7 +264,20 @@ export const OpenInPicker = memo(function OpenInPicker({
   const effectiveEditors = remote.mode === "local-exec" ? availableEditors : remoteCapableEditors;
   const [preferredEditor, setPreferredEditor] = usePreferredEditor(effectiveEditors);
 
-  const openInEditor = async (editorId: EditorId | null): Promise<boolean> => {
+  const editorSync = useEditorWorktreeActions({
+    environmentId,
+    target: worktreeSync,
+    remote,
+    markRemoteHintSeen,
+  });
+
+  const isWorktreeSyncMode =
+    Boolean(worktreeSync?.worktreePath) &&
+    preferredEditor !== null &&
+    preferredEditor !== "file-manager" &&
+    editorSync.status?.isLinkedWorktree !== false;
+
+  const openInEditorDirect = async (editorId: EditorId | null): Promise<boolean> => {
     if (!openInCwd) return false;
     const editor = editorId ?? preferredEditor;
     if (!editor) return false;
@@ -288,6 +311,26 @@ export const OpenInPicker = memo(function OpenInPicker({
     return (await result)._tag === "Success";
   };
 
+  const openOrPushEditor = async (editorId: EditorId | null): Promise<boolean> => {
+    const editor = editorId ?? preferredEditor;
+    if (!editor) return false;
+    if (
+      Boolean(worktreeSync?.worktreePath) &&
+      editor !== "file-manager" &&
+      editorSync.status?.isLinkedWorktree !== false &&
+      editorSync.canWriteSourceControl
+    ) {
+      setPreferredEditor(editor);
+      return editorSync.pushToEditor({
+        editor,
+        targetPath: openInCwd,
+        targetIsFile: openInCwdIsFile,
+        resolve: messages,
+      });
+    }
+    return openInEditorDirect(editor);
+  };
+
   const openFavoriteEditorShortcutLabel = shortcutLabelForCommand(
     keybindings,
     "editor.openFavorite",
@@ -296,11 +339,17 @@ export const OpenInPicker = memo(function OpenInPicker({
   const backgroundThread = use(BackgroundThreadContext);
   const options = resolveOpenInOptions(navigator.platform, effectiveEditors, messages);
   const primaryOption = options.find(({ value }) => value === preferredEditor) ?? null;
-  const primaryLabel = isPanel
-    ? primaryOption
-      ? gt("Open in {editor}", { editor: primaryOption.label })
-      : gt("Open in editor")
-    : gt("Open", { $context: "verb, opens the project in the preferred editor" });
+  const primaryLabel = isWorktreeSyncMode
+    ? isPanel
+      ? primaryOption
+        ? gt("Push to {editor}", { editor: primaryOption.label })
+        : gt("Push to editor")
+      : gt("Push", { $context: "verb, syncs worktree changes to the dedicated editor worktree" })
+    : isPanel
+      ? primaryOption
+        ? gt("Open in {editor}", { editor: primaryOption.label })
+        : gt("Open in editor")
+      : gt("Open", { $context: "verb, opens the project in the preferred editor" });
 
   const unavailableReason =
     remote.mode === "remote-unavailable"
@@ -333,7 +382,7 @@ export const OpenInPicker = memo(function OpenInPicker({
               key={value}
               onClick={() => {
                 if (presentation === "menu") {
-                  void openInEditor(value);
+                  void openOrPushEditor(value);
                 } else {
                   setPreferredEditor(value);
                 }
@@ -346,6 +395,23 @@ export const OpenInPicker = memo(function OpenInPicker({
               )}
             </MenuItem>
           ))}
+          {isWorktreeSyncMode && primaryOption && openInCwd ? (
+            <>
+              <MenuSeparator />
+              <MenuItem
+                density={presentation === "menu" ? "touch" : "default"}
+                disabled={!canOpenEditor}
+                onClick={() => {
+                  void openInEditorDirect(primaryOption.value);
+                }}
+              >
+                <SquareArrowOutUpRightIcon aria-hidden="true" className="text-muted-foreground" />
+                <MenuItemLabel>
+                  {gt("Open worktree directly in {editor}", { editor: primaryOption.label })}
+                </MenuItemLabel>
+              </MenuItem>
+            </>
+          ) : null}
           {remote.mode === "remote-links" && !remoteHintSeen && (
             <MenuItem density={presentation === "menu" ? "touch" : "default"} disabled>
               {environmentLabel !== null
@@ -365,15 +431,20 @@ export const OpenInPicker = memo(function OpenInPicker({
         {primaryOption && (
           <MenuItem
             density={presentation === "menu" ? "touch" : "default"}
-
-            disabled={!openInCwd || !canOpenEditor}
-            onClick={() => openInEditor(preferredEditor)}
+            disabled={!openInCwd || !canOpenEditor || editorSync.isPushing}
+            onClick={() => openOrPushEditor(preferredEditor)}
           >
             <primaryOption.Icon className={cn("size-4", getOpenInIconClass(primaryOption.kind))} />
             <MenuItemLabel>
-              <T>
-                Open in <Var>{primaryOption.label}</Var>
-              </T>
+              {isWorktreeSyncMode ? (
+                <T>
+                  Push to <Var>{primaryOption.label}</Var>
+                </T>
+              ) : (
+                <T>
+                  Open in <Var>{primaryOption.label}</Var>
+                </T>
+              )}
             </MenuItemLabel>
             {openFavoriteEditorShortcutLabel && (
               <MenuShortcut>{openFavoriteEditorShortcutLabel}</MenuShortcut>
@@ -393,7 +464,21 @@ export const OpenInPicker = memo(function OpenInPicker({
     );
   }
 
-  const primaryControlLabel = compact ? gt("Open file in preferred editor") : primaryLabel;
+  const primaryDisabled = isWorktreeSyncMode
+    ? !preferredEditor ||
+      !openInCwd ||
+      !canOpenEditor ||
+      !editorSync.canWriteSourceControl ||
+      editorSync.isPushing ||
+      editorSync.isPulling
+    : !preferredEditor || !openInCwd || !canOpenEditor;
+
+  const primaryControlLabel = compact
+    ? isWorktreeSyncMode && primaryOption
+      ? gt("Push and open file in {editor}", { editor: primaryOption.label })
+      : gt("Open file in preferred editor")
+    : primaryLabel;
+
   const primaryControl = (
     <ThreadDetailsControl
       aria-label={primaryControlLabel}
@@ -403,17 +488,29 @@ export const OpenInPicker = memo(function OpenInPicker({
       variant={isPanel ? "ghost" : "outline"}
       part="primary"
       panel={isPanel}
-      disabled={!preferredEditor || !openInCwd || !canOpenEditor}
+      disabled={primaryDisabled}
       {...(enableShortcut && !backgroundThread ? { [OPEN_FAVORITE_EDITOR_ATTRIBUTE]: "" } : {})}
       onClick={() => {
         if (!preferredEditor) return;
         const label = editorLabelForPlatform(preferredEditor, navigator.platform);
-        void openInEditor(preferredEditor).then((opened) => {
-          if (opened) announce(gt("Opened in {editor}", { editor: label }));
+        void openOrPushEditor(preferredEditor).then((opened) => {
+          if (opened) {
+            announce(
+              isWorktreeSyncMode
+                ? gt("Pushed to {editor}", { editor: label })
+                : gt("Opened in {editor}", { editor: label }),
+            );
+          }
         });
       }}
     >
-      {primaryOption?.Icon ? (
+      {editorSync.isPushing ? (
+        isPanel ? (
+          <Spinner aria-hidden="true" className="size-4 shrink-0" />
+        ) : (
+          <Spinner aria-hidden="true" className="size-3.5" />
+        )
+      ) : primaryOption?.Icon ? (
         <primaryOption.Icon
           aria-hidden="true"
           className={cn(
@@ -437,7 +534,49 @@ export const OpenInPicker = memo(function OpenInPicker({
     </ThreadDetailsControl>
   );
 
-  return (
+  const isOwnerThread =
+    worktreeSync !== undefined && editorSync.status?.ownerThreadId === worktreeSync.threadId;
+  const isThreadWorking = worktreeSync?.isWorking === true;
+  const canPullFromEditor =
+    isWorktreeSyncMode &&
+    isOwnerThread &&
+    !isThreadWorking &&
+    editorSync.canWriteSourceControl &&
+    !editorSync.isPushing &&
+    !editorSync.isPulling;
+
+  const pullEditorName =
+    primaryOption?.label ??
+    (preferredEditor
+      ? editorLabelForPlatform(preferredEditor, navigator.platform, messages)
+      : null);
+  const pullLabel = pullEditorName
+    ? gt("Pull from {editor}", { editor: pullEditorName })
+    : gt("Pull from editor");
+
+  const pullTooltip = !editorSync.canWriteSourceControl
+    ? gt("This connection cannot modify source control on this environment.")
+    : isThreadWorking
+      ? pullEditorName
+        ? gt("Wait for the current turn to finish before pulling from {editor}.", {
+            editor: pullEditorName,
+          })
+        : gt("Wait for the current turn to finish before pulling.")
+      : !editorSync.status?.exists || editorSync.status.ownerThreadId === null
+        ? pullEditorName
+          ? gt("Push this thread to {editor} first.", { editor: pullEditorName })
+          : gt("Push this thread to the editor first.")
+        : !isOwnerThread
+          ? pullEditorName
+            ? gt("Another thread pushed to {editor} most recently.", { editor: pullEditorName })
+            : gt("Another thread pushed to the editor most recently.")
+          : pullEditorName
+            ? gt("Pull committed and uncommitted changes from {editor} into this thread", {
+                editor: pullEditorName,
+              })
+            : gt("Pull committed and uncommitted changes from the editor into this thread");
+
+  const splitRow = (
     <ActionGroup
       aria-label={gt("Open in editor")}
       role="group"
@@ -491,5 +630,53 @@ export const OpenInPicker = memo(function OpenInPicker({
         </MenuPopup>
       </Menu>
     </ActionGroup>
+  );
+
+  if (!isPanel || !isWorktreeSyncMode) {
+    return splitRow;
+  }
+
+  return (
+    <>
+      {splitRow}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <span className="flex w-full">
+              <ThreadDetailsControl
+                aria-label={pullLabel}
+                size="sm"
+                variant="ghost"
+                part="row"
+                panel
+                disabled={!canPullFromEditor}
+                onClick={() => {
+                  void editorSync.pullFromEditor({
+                    editor: preferredEditor,
+                    resolve: messages,
+                  });
+                }}
+              >
+                {editorSync.isPulling ? (
+                  <Spinner aria-hidden="true" className="size-4 shrink-0" />
+                ) : (
+                  <ArrowDownToLineIcon
+                    aria-hidden="true"
+                    className={THREAD_DETAILS_PANEL_ICON_CLASS}
+                  />
+                )}
+                <span className={cn("min-w-0 flex-1 truncate", THREAD_DETAILS_PANEL_LABEL_CLASS)}>
+                  {pullLabel}
+                </span>
+                {isOwnerThread && editorSync.status?.hasUnpulledEditorChanges ? (
+                  <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-primary" />
+                ) : null}
+              </ThreadDetailsControl>
+            </span>
+          }
+        />
+        <TooltipPopup side="top">{pullTooltip}</TooltipPopup>
+      </Tooltip>
+    </>
   );
 });

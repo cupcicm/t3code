@@ -268,6 +268,14 @@ export default function DiffPanel({
   const openInPreferredEditor = useOpenInPreferredEditor(
     activeThread?.environmentId ?? null,
     serverConfig?.availableEditors ?? [],
+    activeCwd,
+    activeThread?.worktreePath
+      ? {
+          threadId: activeThread.id,
+          projectId: activeThread.projectId,
+          worktreePath: activeThread.worktreePath,
+        }
+      : undefined,
   );
   const getDiffFileContents = useAtomCommand(reviewEnvironment.diffFileContents);
   const gitStatusQuery = useEnvironmentQuery(

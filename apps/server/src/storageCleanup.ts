@@ -591,6 +591,20 @@ const make = Effect.gen(function* () {
         if (modified !== null && modified.getTime() > now - ORPHAN_WORKTREE_GRACE_MS) return;
         const gitPath = path.join(worktreePath, ".git");
         const linked = (yield* fs.exists(gitPath)) && (yield* isLinkedWorktree(worktreePath));
+        if (linked && path.basename(worktreePath) === "cursor") {
+          const syncMeta = yield* git.execute({
+            operation: "StorageCleanup.editorWorktreeMetadata",
+            cwd: worktreePath,
+            args: ["rev-parse", "--path-format=absolute", "--git-path", "t3-editor-sync.json"],
+            allowNonZeroExit: true,
+          });
+          if (
+            syncMeta.exitCode === 0 &&
+            (yield* fs.exists(syncMeta.stdout.trim()).pipe(Effect.orElseSucceed(() => false)))
+          ) {
+            return;
+          }
+        }
         reported.set(key, {
           path: worktreePath,
           reason: linked

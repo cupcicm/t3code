@@ -1,4 +1,5 @@
 import {
+  AuthSourceControlWriteScope,
   buildRemoteOpenUrl,
   type EditorId,
   type EnvironmentId,
@@ -9,13 +10,19 @@ import { useEffect } from "react";
 
 import { usePreferredEditor } from "../../editorPreferences";
 import { editorLabelForPlatform } from "../../editorLabels";
+import {
+  type EditorWorktreeSyncTarget,
+  runPushToEditorWorktreeWithConfirm,
+} from "../../editorWorktreeSync";
 import { isOpenFavoriteEditorShortcut } from "../../keybindings";
 import { m } from "../../i18n/messages";
 import { announce } from "../../lib/announce";
 import { openRemoteEditorUrl, useRemoteCapableEditors, useRemoteOpenState } from "../../remoteOpen";
 import { registerCommands } from "../../shortcuts/dispatcher";
+import { readEnvironmentScope } from "../../state/session";
 import { shellEnvironment } from "../../state/shell";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { vcsEnvironment } from "../../state/vcs";
 
 /** Marks an OpenInPicker's primary button as the target of `editor.openFavorite`. */
 export const OPEN_FAVORITE_EDITOR_ATTRIBUTE = "data-open-favorite-editor";
@@ -48,14 +55,19 @@ export function useOpenFavoriteEditorShortcut({
   keybindings,
   availableEditors,
   openInCwd,
+  worktreeSync,
 }: {
   enabled: boolean;
   environmentId: EnvironmentId;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
   openInCwd: string | null;
+  worktreeSync?: EditorWorktreeSyncTarget | undefined;
 }) {
   const openInEditorMutation = useAtomCommand(shellEnvironment.openInEditor, "open in editor");
+  const pushToEditorWorktree = useAtomCommand(vcsEnvironment.pushToEditorWorktree, {
+    reportFailure: false,
+  });
   const remote = useRemoteOpenState(environmentId);
   const remoteCapableEditors = useRemoteCapableEditors();
   // Matches the picker: remote editors run on the viewing machine.
@@ -77,27 +89,52 @@ export function useOpenFavoriteEditorShortcut({
 
       event.preventDefault();
       const label = editorLabelForPlatform(preferredEditor, navigator.platform);
-      if (remote.mode === "remote-links") {
-        const url = buildRemoteOpenUrl({
-          editor: preferredEditor,
-          ...remote.host,
-          absolutePath: openInCwd,
+      const launchAtPath = (targetPath: string, pushed: boolean) => {
+        const announced = pushed
+          ? m(msg("Pushed to {editor}", { editor: label }))
+          : m(msg("Opened in {editor}", { editor: label }));
+        if (remote.mode === "remote-links") {
+          const url = buildRemoteOpenUrl({
+            editor: preferredEditor,
+            ...remote.host,
+            absolutePath: targetPath,
+          });
+          if (url === undefined) return;
+          void openRemoteEditorUrl(url).then((opened) => {
+            if (opened) announce(announced);
+          });
+          return;
+        }
+        void openInEditorMutation({
+          environmentId,
+          input: {
+            cwd: targetPath,
+            editor: preferredEditor,
+          },
+        }).then((result) => {
+          if (result._tag === "Success") announce(announced);
         });
-        if (url === undefined) return;
-        void openRemoteEditorUrl(url).then((opened) => {
-          if (opened) announce(m(msg("Opened in {editor}", { editor: label })));
+      };
+
+      if (
+        worktreeSync?.worktreePath &&
+        preferredEditor !== "file-manager" &&
+        readEnvironmentScope(environmentId, AuthSourceControlWriteScope)
+      ) {
+        void runPushToEditorWorktreeWithConfirm({
+          environmentId,
+          cwd: worktreeSync.worktreePath,
+          threadId: worktreeSync.threadId,
+          projectId: worktreeSync.projectId,
+          editorLabel: label,
+          pushCommand: pushToEditorWorktree,
+        }).then((pushed) => {
+          if (pushed) launchAtPath(pushed.editorWorktreePath, true);
         });
         return;
       }
-      void openInEditorMutation({
-        environmentId,
-        input: {
-          cwd: openInCwd,
-          editor: preferredEditor,
-        },
-      }).then((result) => {
-        if (result._tag === "Success") announce(m(msg("Opened in {editor}", { editor: label })));
-      });
+
+      launchAtPath(openInCwd, false);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -108,6 +145,8 @@ export function useOpenFavoriteEditorShortcut({
     openInCwd,
     openInEditorMutation,
     preferredEditor,
+    pushToEditorWorktree,
     remote,
+    worktreeSync,
   ]);
 }

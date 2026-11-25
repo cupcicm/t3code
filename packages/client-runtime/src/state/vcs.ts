@@ -17,6 +17,7 @@ import { Atom, AtomRegistry } from "effect/reactivity";
 
 import {
   createEnvironmentRpcCommand,
+  createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
   createEnvironmentSubscriptionAtomFamily,
 } from "./runtime.ts";
@@ -41,6 +42,14 @@ import {
 
 // Share freshness across search and pagination keys, but keep it local to this registry.
 const serverRefsRevisionAtom = Atom.family((_key: string) => Atom.make(0).pipe(Atom.keepAlive));
+
+export const editorWorktreeRevisionAtom = Atom.family((_environmentId: EnvironmentId) =>
+  Atom.make(0).pipe(Atom.keepAlive),
+);
+
+export const editorWorktreePulledRevisionAtom = Atom.family((_key: string) =>
+  Atom.make(0).pipe(Atom.keepAlive),
+);
 
 const OFFLINE_BRANCH_LIST_LIMIT = 100;
 const VCS_REFS_IDLE_TTL_MS = 30_000;
@@ -291,6 +300,23 @@ export function createVcsEnvironmentAtoms<R, E>(
       environmentId: target.environmentId,
       cwd: target.input.cwd,
     });
+  const bumpEditorWorktreeRevision = (
+    target: { readonly environmentId: EnvironmentId },
+    registry: AtomRegistry.AtomRegistry,
+  ) =>
+    Effect.sync(() => {
+      registry.update(editorWorktreeRevisionAtom(target.environmentId), (n) => n + 1);
+    });
+  const bumpEditorWorktreePulledRevision = (
+    target: { readonly environmentId: EnvironmentId; readonly input: { readonly cwd: string } },
+    registry: AtomRegistry.AtomRegistry,
+  ) =>
+    Effect.sync(() => {
+      registry.update(
+        editorWorktreePulledRevisionAtom(`${target.environmentId}:${target.input.cwd}`),
+        (n) => n + 1,
+      );
+    });
 
   return {
     listRefs,
@@ -370,6 +396,54 @@ export function createVcsEnvironmentAtoms<R, E>(
       scheduler: vcsCommandScheduler,
       concurrency: vcsCommandConcurrency,
       onSettled: invalidateRefs,
+    }),
+    editorWorktreeStatus: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:vcs:editor-worktree-status",
+      tag: WS_METHODS.vcsEditorWorktreeStatus,
+      idleTtlMs: VCS_STATUS_IDLE_TTL_MS,
+    }),
+    ensureEditorWorktree: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:ensure-editor-worktree",
+      tag: WS_METHODS.vcsEnsureEditorWorktree,
+      onSuccess: (target, registry, result) =>
+        result.created ? bumpEditorWorktreeRevision(target, registry) : Effect.void,
+    }),
+    pushToEditorWorktree: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:push-to-editor-worktree",
+      tag: WS_METHODS.vcsPushToEditorWorktree,
+      onSuccess: (target, registry, result) => {
+        const autoPulled = result.autoPulledThread;
+        if (!autoPulled) return Effect.void;
+        return Effect.all(
+          [
+            invalidateRefs(
+              { environmentId: target.environmentId, input: { cwd: autoPulled.cwd } },
+              registry,
+            ),
+            bumpEditorWorktreePulledRevision(
+              { environmentId: target.environmentId, input: { cwd: autoPulled.cwd } },
+              registry,
+            ),
+          ],
+          { discard: true },
+        );
+      },
+      onSettled: bumpEditorWorktreeRevision,
+    }),
+    pullFromEditorWorktree: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:pull-from-editor-worktree",
+      tag: WS_METHODS.vcsPullFromEditorWorktree,
+      onSuccess: (target, registry, result) =>
+        result.noop === true
+          ? Effect.void
+          : Effect.all(
+              [
+                invalidateRefs(target, registry),
+                bumpEditorWorktreePulledRevision(target, registry),
+              ],
+              { discard: true },
+            ),
+      onSettled: bumpEditorWorktreeRevision,
     }),
     createRef: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:create-ref",

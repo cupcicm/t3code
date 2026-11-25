@@ -1,4 +1,11 @@
-import { AuthOrchestrationOperateScope, EnvironmentId, type EditorId } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  AuthSourceControlWriteScope,
+  EnvironmentId,
+  ThreadId,
+  type EditorId,
+  type VcsEditorWorktreeStatusResult,
+} from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { Cause } from "effect";
 import { AsyncResult } from "effect/reactivity";
@@ -11,6 +18,7 @@ const state = vi.hoisted(() => ({
   allowed: new Set<string>(),
   remote: { mode: "local-exec" } as RemoteOpenState,
   clientEditors: ["vscode"] as readonly EditorId[],
+  editorWorktreeStatus: null as VcsEditorWorktreeStatusResult | null,
   run: vi.fn(),
   openUrl: vi.fn(),
   setPreferred: vi.fn(),
@@ -21,7 +29,8 @@ const state = vi.hoisted(() => ({
 vi.mock(import("../../state/session"), async (importOriginal) => {
   const { useSyncExternalStore } = await import("react");
   const readEnvironmentScope = (environmentId: string, scope: string) =>
-    scope === AuthOrchestrationOperateScope && state.allowed.has(environmentId);
+    (scope === AuthOrchestrationOperateScope || scope === AuthSourceControlWriteScope) &&
+    state.allowed.has(environmentId);
   return {
     ...(await importOriginal()),
     readEnvironmentScope: readEnvironmentScope as never,
@@ -35,6 +44,14 @@ vi.mock(import("../../state/session"), async (importOriginal) => {
       )) as never,
   };
 });
+vi.mock(import("../../state/query"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  useEnvironmentQuery: (() => ({
+    data: state.editorWorktreeStatus,
+    isPending: false,
+    refresh: vi.fn().mockResolvedValue(undefined),
+  })) as never,
+}));
 vi.mock(import("../../state/use-atom-command"), async (importOriginal) => ({
   ...(await importOriginal()),
   useAtomCommand: (() => state.run) as never,
@@ -79,6 +96,7 @@ async function setup() {
   state.allowed.clear();
   state.remote = { mode: "local-exec" };
   state.clientEditors = editors;
+  state.editorWorktreeStatus = null;
   state.run.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   state.openUrl.mockReset().mockResolvedValue(true);
   state.setPreferred.mockReset();
@@ -98,7 +116,19 @@ async function setup() {
   async function renderPicker(
     availableEditors: readonly EditorId[] = editors,
     panel = false,
-    { openInCwd = "/work/project", revealFileManager = false } = {},
+    {
+      openInCwd = "/work/project",
+      revealFileManager = false,
+      worktreeSync,
+    }: {
+      openInCwd?: string;
+      revealFileManager?: boolean;
+      worktreeSync?: {
+        threadId: ThreadId;
+        worktreePath: string | null;
+        isWorking?: boolean;
+      };
+    } = {},
   ) {
     await act(async () => {
       for (const listener of state.listeners) listener();
@@ -111,6 +141,7 @@ async function setup() {
           revealFileManager={revealFileManager}
           displayMode={panel ? "panel" : "toolbar"}
           compact={!panel}
+          worktreeSync={worktreeSync}
         />
       );
       await screen.rerender(node);
@@ -253,5 +284,60 @@ describe("open in editor announcement", () => {
     expect(await spoken()).toBe("");
     await pressOpenFavorite();
     expect(await spoken()).toBe("Opened in VS Code");
+  });
+});
+
+describe("dedicated editor worktree push and pull", () => {
+  it("replaces Open in Cursor with Push to Cursor and enables Pull from Cursor only for the owner thread", async () => {
+    await using fixture = await setup();
+    const { renderPicker, byLabel, click } = fixture;
+    state.allowed.add(selected);
+    const threadA = ThreadId.make("thread-a");
+    const threadB = ThreadId.make("thread-b");
+
+    state.editorWorktreeStatus = {
+      isLinkedWorktree: true,
+      editorWorktreePath: "/worktrees/project/cursor",
+      exists: true,
+      ownerThreadId: threadB,
+      hasUnpulledEditorChanges: true,
+    };
+
+    await renderPicker(["cursor"], true, {
+      openInCwd: "/worktrees/project/t3-a",
+      worktreeSync: { threadId: threadA, worktreePath: "/worktrees/project/t3-a" },
+    });
+
+    expect(byLabel("Push to Cursor").disabled).toBe(false);
+    expect(byLabel("Pull from Cursor").disabled).toBe(true);
+
+    state.editorWorktreeStatus = {
+      ...state.editorWorktreeStatus,
+      ownerThreadId: threadA,
+    };
+    await renderPicker(["cursor"], true, {
+      openInCwd: "/worktrees/project/t3-a",
+      worktreeSync: { threadId: threadA, worktreePath: "/worktrees/project/t3-a" },
+    });
+    expect(byLabel("Pull from Cursor").disabled).toBe(false);
+
+    state.run
+      .mockResolvedValueOnce(
+        AsyncResult.success({
+          editorWorktreePath: "/worktrees/project/cursor",
+          created: false,
+          headSha: "abc123",
+        }),
+      )
+      .mockResolvedValueOnce(AsyncResult.success(undefined));
+    await click(byLabel("Push to Cursor"));
+    expect(state.run).toHaveBeenNthCalledWith(1, {
+      environmentId: selected,
+      input: { cwd: "/worktrees/project/t3-a", threadId: threadA },
+    });
+    expect(state.run).toHaveBeenNthCalledWith(2, {
+      environmentId: selected,
+      input: { cwd: "/worktrees/project/cursor", editor: "cursor" },
+    });
   });
 });

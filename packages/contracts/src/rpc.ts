@@ -87,6 +87,17 @@ import {
 } from "./acpRegistry.ts";
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import {
+  VcsEditorWorktreeConflictError,
+  VcsEditorWorktreeStatusInput,
+  VcsEditorWorktreeStatusResult,
+  VcsEnsureEditorWorktreeInput,
+  VcsEnsureEditorWorktreeResult,
+  VcsPullFromEditorWorktreeInput,
+  VcsPullFromEditorWorktreeResult,
+  VcsPushToEditorWorktreeInput,
+  VcsPushToEditorWorktreeResult,
+} from "./editorWorktree.ts";
+import {
   AuthAccessStreamError,
   AuthAccessStreamEvent,
   EnvironmentAuthorizationError,
@@ -498,6 +509,10 @@ export const WS_METHODS = {
   vcsListRefs: "vcs.listRefs",
   vcsCreateWorktree: "vcs.createWorktree",
   vcsRemoveWorktree: "vcs.removeWorktree",
+  vcsEditorWorktreeStatus: "vcs.editorWorktreeStatus",
+  vcsEnsureEditorWorktree: "vcs.ensureEditorWorktree",
+  vcsPushToEditorWorktree: "vcs.pushToEditorWorktree",
+  vcsPullFromEditorWorktree: "vcs.pullFromEditorWorktree",
   vcsCreateRef: "vcs.createRef",
   vcsSwitchRef: "vcs.switchRef",
   vcsInit: "vcs.init",
@@ -1793,6 +1808,38 @@ const WsVcsRemoveWorktreeRpc = Rpc.make(WS_METHODS.vcsRemoveWorktree, {
   error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
 });
 
+const WsVcsEditorWorktreeStatusRpc = Rpc.make(WS_METHODS.vcsEditorWorktreeStatus, {
+  payload: VcsEditorWorktreeStatusInput,
+  success: VcsEditorWorktreeStatusResult,
+  error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsEnsureEditorWorktreeRpc = Rpc.make(WS_METHODS.vcsEnsureEditorWorktree, {
+  payload: VcsEnsureEditorWorktreeInput,
+  success: VcsEnsureEditorWorktreeResult,
+  error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsPushToEditorWorktreeRpc = Rpc.make(WS_METHODS.vcsPushToEditorWorktree, {
+  payload: VcsPushToEditorWorktreeInput,
+  success: VcsPushToEditorWorktreeResult,
+  error: Schema.Union([
+    GitCommandError,
+    VcsEditorWorktreeConflictError,
+    EnvironmentAuthorizationError,
+  ]),
+});
+
+const WsVcsPullFromEditorWorktreeRpc = Rpc.make(WS_METHODS.vcsPullFromEditorWorktree, {
+  payload: VcsPullFromEditorWorktreeInput,
+  success: VcsPullFromEditorWorktreeResult,
+  error: Schema.Union([
+    GitCommandError,
+    VcsEditorWorktreeConflictError,
+    EnvironmentAuthorizationError,
+  ]),
+});
+
 const WsVcsCreateRefRpc = Rpc.make(WS_METHODS.vcsCreateRef, {
   payload: VcsCreateRefInput,
   success: VcsCreateRefResult,
@@ -2478,6 +2525,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsListRefsRpc,
   WsVcsCreateWorktreeRpc,
   WsVcsRemoveWorktreeRpc,
+  WsVcsEditorWorktreeStatusRpc,
+  WsVcsEnsureEditorWorktreeRpc,
+  WsVcsPushToEditorWorktreeRpc,
+  WsVcsPullFromEditorWorktreeRpc,
   WsVcsCreateRefRpc,
   WsVcsSwitchRefRpc,
   WsVcsInitRpc,

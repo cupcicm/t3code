@@ -220,6 +220,7 @@ import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
+import * as EditorWorktreeService from "./git/EditorWorktreeService.ts";
 import { refreshPushedPullRequests } from "./git/refreshPushedPullRequests.ts";
 import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
 import * as ReviewService from "./review/ReviewService.ts";
@@ -1534,6 +1535,7 @@ export const layerWsRpc = (
       const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
       const directEndpoints = yield* DirectEndpoints.DirectEndpoints;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
+      const editorWorktree = yield* EditorWorktreeService.EditorWorktreeService;
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
@@ -3247,6 +3249,41 @@ export const layerWsRpc = (
                 .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid),
             ),
           ),
+        [WS_METHODS.vcsEditorWorktreeStatus]: (input) => editorWorktree.status(input),
+        [WS_METHODS.vcsEnsureEditorWorktree]: (input) => editorWorktree.ensure(input),
+        [WS_METHODS.vcsPushToEditorWorktree]: (input) =>
+          editorWorktree.push(input).pipe(
+            Effect.tap((result) =>
+              result.autoPulledThread
+                ? gitWorkflow
+                    .invalidateStatus(result.autoPulledThread.cwd)
+                    .pipe(
+                      Effect.andThen(
+                        vcsStatusBroadcaster.refreshAfterCheckout(result.autoPulledThread.cwd),
+                      ),
+                    )
+                : Effect.void,
+            ),
+            Effect.tap((result) =>
+              result.noop === true
+                ? Effect.void
+                : vcsStatusBroadcaster
+                    .refreshAfterCheckout(result.editorWorktreePath)
+                    .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid),
+            ),
+          ),
+        [WS_METHODS.vcsPullFromEditorWorktree]: (input) =>
+          editorWorktree
+            .pull(input)
+            .pipe(
+              Effect.tap((result) =>
+                result.noop === true
+                  ? Effect.void
+                  : gitWorkflow
+                      .invalidateStatus(input.cwd)
+                      .pipe(Effect.andThen(vcsStatusBroadcaster.refreshAfterCheckout(input.cwd))),
+              ),
+            ),
         [WS_METHODS.vcsCreateRef]: (input) =>
           gitWorkflow
             .createRef(input)

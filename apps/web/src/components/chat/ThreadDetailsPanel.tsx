@@ -55,6 +55,7 @@ interface ThreadDetailsPanelProps extends Pick<
   threadId: ThreadId;
   projectId: ProjectId;
   worktreePath: string | null;
+  isWorking?: boolean | undefined;
   isServerThread: boolean;
   draftId?: DraftId;
   composerDraftTarget: ComposerThreadTarget;
@@ -210,6 +211,16 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                         openInCwd={props.gitCwd}
                         enableShortcut={props.openInShortcutEnabled}
                         displayMode="panel"
+                        worktreeSync={
+                          offersGit && props.isGitRepo && props.worktreePath
+                            ? {
+                                threadId: props.threadId,
+                                projectId: props.projectId,
+                                worktreePath: props.worktreePath,
+                                isWorking: props.isWorking,
+                              }
+                            : undefined
+                        }
                       />
                     ) : null}
 
