@@ -545,6 +545,16 @@ const handlers: Record<string, (input: never) => unknown> = {
         if (vcsStatusSubscriber === queue) vcsStatusSubscriber = null;
       };
     }),
+  [WS_METHODS.vcsEnsureEditorWorktree]: () =>
+    Effect.succeed({ editorWorktreePath: null, created: false }),
+  [WS_METHODS.vcsEditorWorktreeStatus]: () =>
+    Effect.succeed({
+      isLinkedWorktree: false,
+      editorWorktreePath: null,
+      exists: false,
+      ownerThreadId: null,
+      hasUnpulledEditorChanges: false,
+    }),
   [WS_METHODS.subscribeServerConfig]: () =>
     subscribe([{ version: 1 as const, type: "snapshot" as const, config: serverConfig() }]),
 };

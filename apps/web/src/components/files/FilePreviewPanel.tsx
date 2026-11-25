@@ -88,6 +88,7 @@ import { useEnvironmentHttpBaseUrl, usePrimaryEnvironmentId } from "~/state/envi
 import { hostEnvironmentIdAtom } from "~/state/primaryEnvironment";
 import { previewEnvironment } from "~/state/preview";
 import { serverEnvironment } from "~/state/server";
+import { useQuietThreadShell } from "~/state/entities";
 import { useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
@@ -1300,6 +1301,7 @@ export default function FilePreviewPanel({
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const hostEnvironmentId = useAtomValue(hostEnvironmentIdAtom);
   const remoteOpenState = useRemoteOpenState(environmentId);
+  const previewThreadShell = useQuietThreadShell(threadRef ?? null);
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const environmentHttpBaseUrl = useEnvironmentHttpBaseUrl(environmentId);
   const previewAvailable = usePreviewAvailable(environmentId);
@@ -1618,6 +1620,15 @@ export default function FilePreviewPanel({
               openInCwdIsFile={file.isFile}
               compact
               revealFileManager={revealsInFileManager}
+              worktreeSync={
+                threadRef && (previewThreadShell?.worktreePath ?? cwd)
+                  ? {
+                      threadId: threadRef.threadId,
+                      projectId,
+                      worktreePath: previewThreadShell?.worktreePath ?? cwd,
+                    }
+                  : undefined
+              }
             />
           ) : null}
           {canToggleRendered && renderedMode ? (

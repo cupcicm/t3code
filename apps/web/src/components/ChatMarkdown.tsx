@@ -694,7 +694,23 @@ function useChatMarkdownState({
     ).data ?? undefined;
   const [preferredEditor] = usePreferredEditor(availableEditors);
   const preferredEditorMenuLabel = openInEditorMenuLabel(preferredEditor, messages);
-  const openInPreferredEditor = useOpenInPreferredEditor(environmentId, availableEditors, cwd);
+  const openInPreferredEditor = useOpenInPreferredEditor(
+    environmentId,
+    availableEditors,
+    cwd,
+    () => {
+      if (!threadRef) return undefined;
+      const shell = readThreadShell(threadRef);
+      const syncCwd = shell?.worktreePath ?? cwd;
+      return shell && syncCwd
+        ? {
+            threadId: threadRef.threadId,
+            projectId: shell.projectId,
+            worktreePath: syncCwd,
+          }
+        : undefined;
+    },
+  );
   const openInEditor = useAtomCommand(shellEnvironment.openInEditor, {
     reportFailure: false,
   });

@@ -2,6 +2,8 @@ import {
   createVcsActionManager,
   createVcsEnvironmentAtoms,
   createVcsStatusRevalidationAtomFamily,
+  editorWorktreePulledRevisionAtom,
+  editorWorktreeRevisionAtom,
 } from "@t3tools/client-runtime/state/vcs";
 import * as Equal from "effect/Equal";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -38,3 +40,5 @@ export const vcsBranchRevalidation = createVcsStatusRevalidationAtomFamily({
   subscribeWake: subscribeDocumentReturn,
   wakeDebounceMs: 250,
 });
+
+export { editorWorktreePulledRevisionAtom, editorWorktreeRevisionAtom };

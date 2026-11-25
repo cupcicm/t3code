@@ -67,6 +67,8 @@ import {
   CheckIcon,
   ChevronRightIcon,
   CornerLeftUpIcon,
+  ArrowDownToLineIcon,
+  ArrowUpFromLineIcon,
   FileSearchIcon,
   FolderGit2Icon,
   FolderIcon,
@@ -106,6 +108,12 @@ import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstra
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useOpenPanelPullRequest } from "../hooks/useOpenPanelPullRequestUrl";
 import { copyPullRequestPrettyLinkWithToast } from "./pullRequest/pullRequestPrettyLink";
+import { editorLabelForPlatform } from "../editorLabels";
+import { usePreferredEditor } from "../editorPreferences";
+import {
+  pullThreadWorktreeFromEditorImperative,
+  pushThreadWorktreeToEditorImperative,
+} from "../editorWorktreeSync";
 import { copyThreadReference } from "../lib/copyThreadReference";
 import {
   queueWorkspaceFocusFromPalette,
@@ -520,6 +528,9 @@ function OpenCommandPaletteDialog(props: {
     openPanelPullRequest === undefined ? undefined : (openPanelPullRequest?.url ?? null);
   const activeThreadServerConfig = useServerConfigs().get(
     activeThread?.environmentId ?? ("" as EnvironmentId),
+  );
+  const [palettePreferredEditor] = usePreferredEditor(
+    activeThreadServerConfig?.availableEditors ?? [],
   );
   const canShareActiveThreadWithGuest = useAtomValue(
     canShareWithGuestAtom(activeThread?.environmentId ?? ("" as EnvironmentId)),
@@ -1589,6 +1600,83 @@ function OpenCommandPaletteDialog(props: {
       icon: <UserPlusIcon className={ITEM_ICON_CLASS} />,
       run: async () => {
         openGuestShareDialog(threadRef);
+      },
+    });
+  }
+
+  const activeThreadProject = activeThread
+    ? projects.find(
+        (project) =>
+          project.environmentId === activeThread.environmentId &&
+          project.id === activeThread.projectId,
+      )
+    : undefined;
+  const activeThreadSyncCwd =
+    activeThread &&
+    activeThreadProject &&
+    !isScratchProject(
+      activeThreadProject,
+      scratchWorkspaceRootFor(activeThreadProject.environmentId),
+    )
+      ? (activeThread.worktreePath ?? activeThreadProject.workspaceRoot)
+      : (activeThread?.worktreePath ?? null);
+
+  if (
+    activeThread &&
+    activeThreadSyncCwd != null &&
+    palettePreferredEditor !== null &&
+    palettePreferredEditor !== "file-manager"
+  ) {
+    const thread = activeThread;
+    const worktreePath = activeThreadSyncCwd;
+    const editorLabel = editorLabelForPlatform(
+      palettePreferredEditor,
+      navigator.platform,
+      messages,
+    );
+    const preferredEditor = palettePreferredEditor;
+    const isActiveThreadWorking =
+      thread.runtime?.status === "running" || thread.runtime?.status === "starting";
+    const canSyncWorktree = readEnvironmentScope(thread.environmentId, AuthSourceControlWriteScope);
+    actionItems.push({
+      kind: "action",
+      value: "action:push-thread-to-editor-worktree",
+      searchTerms: ["push", "sync", "editor", "cursor", "worktree", editorLabel.toLowerCase()],
+      title: gt("Push to {editor}", { editor: editorLabel }),
+      disabled: !canSyncWorktree,
+      icon: <ArrowUpFromLineIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "editor.openFavorite",
+      run: async () => {
+        await pushThreadWorktreeToEditorImperative({
+          environmentId: thread.environmentId,
+          target: {
+            threadId: thread.id,
+            projectId: thread.projectId,
+            worktreePath,
+          },
+          editor: preferredEditor,
+          resolve: messages,
+        });
+      },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:pull-thread-from-editor-worktree",
+      searchTerms: ["pull", "sync", "editor", "cursor", "worktree", editorLabel.toLowerCase()],
+      title: gt("Pull from {editor}", { editor: editorLabel }),
+      disabled: isActiveThreadWorking || !canSyncWorktree,
+      icon: <ArrowDownToLineIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await pullThreadWorktreeFromEditorImperative({
+          environmentId: thread.environmentId,
+          target: {
+            threadId: thread.id,
+            projectId: thread.projectId,
+            worktreePath,
+          },
+          editor: preferredEditor,
+          resolve: messages,
+        });
       },
     });
   }

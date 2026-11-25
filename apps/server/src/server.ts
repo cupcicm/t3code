@@ -112,6 +112,7 @@ import * as ServerBrowserStream from "./preview/ServerBrowserStream.ts";
 import * as PreviewBrowser from "./preview/PreviewBrowser.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import * as GitManager from "./git/GitManager.ts";
+import * as EditorWorktreeService from "./git/EditorWorktreeService.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
@@ -470,6 +471,7 @@ const layerGitManager = GitManager.layer.pipe(
 );
 
 const layerGit = Layer.empty.pipe(
+  Layer.provideMerge(EditorWorktreeService.layer),
   Layer.provideMerge(layerGitManager),
   Layer.provideMerge(GitVcsDriver.layer),
 );

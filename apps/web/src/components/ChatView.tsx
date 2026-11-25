@@ -316,6 +316,7 @@ import { useOpenSurfaceInMainView } from "../hooks/useOpenSurfaceInMainView";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
 import { useOpenFavoriteEditorShortcut } from "./chat/OpenInPickerShortcut";
+import { usePublishForegroundEditorSyncTarget } from "../editorWorktreeSync";
 import {
   PanelLayoutControls,
   type PanelLayoutControlsProps,
@@ -381,6 +382,7 @@ import {
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
 import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
+import { editorWorktreePulledRevisionAtom } from "@t3tools/client-runtime/state/vcs";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { assetEnvironment } from "../state/assets";
 import { readEnvironmentScope, readPreparedConnection } from "../state/session";
@@ -1718,12 +1720,19 @@ export default function ChatView(props: ChatViewProps) {
     !serverThreadHistory.hasMoreHistory &&
     findRevertCheckpoint(serverProjection?.checkpoints ?? [], 0) !== undefined;
 
-  const workspaceMutationId = deriveWorkspaceMutationId(
+  const baseWorkspaceMutationId = deriveWorkspaceMutationId(
     serverVisibleTurnItems,
     turnDiffSummaries.at(-1)?.completedAt ?? null,
   );
 
   const gitStatusCwd = activeThread?.worktreePath ?? gitCwd;
+  const editorWorktreePulledRevision = useAtomValue(
+    editorWorktreePulledRevisionAtom(`${environmentId}:${gitStatusCwd ?? ""}`),
+  );
+  const workspaceMutationId =
+    editorWorktreePulledRevision > 0
+      ? `${baseWorkspaceMutationId ?? "base"}:editor-pull:${editorWorktreePulledRevision}`
+      : baseWorkspaceMutationId;
   const gitStatusAtom =
     gitStatusCwd === null
       ? null
@@ -1758,12 +1767,36 @@ export default function ChatView(props: ChatViewProps) {
     hostEnvironmentId,
     remoteOpenMode: remoteOpenState.mode,
   });
+  const editorSyncCwd =
+    !activeProjectIsScratch && gitStatusQuery.data?.isRepo !== false
+      ? (activeThread?.worktreePath ?? gitCwd)
+      : null;
   useOpenFavoriteEditorShortcut({
     enabled: showOpenInPicker && !backgroundThread,
     environmentId: openInEnvironmentId,
     keybindings,
     availableEditors,
     openInCwd: gitCwd,
+    worktreeSync:
+      activeThread && editorSyncCwd
+        ? {
+            threadId: activeThread.id,
+            projectId: activeThread.projectId,
+            worktreePath: editorSyncCwd,
+            isWorking,
+          }
+        : undefined,
+  });
+  usePublishForegroundEditorSyncTarget({
+    enabled: !backgroundThread && !embedded,
+    routeKey: routeThreadKey,
+    environmentId: openInEnvironmentId,
+    threadId: activeThread?.id ?? threadId,
+    projectId: activeThread?.projectId,
+    worktreePath: isServerThread ? editorSyncCwd : null,
+    isWorking: isWorking || isPreparingWorktree || isRevertingCheckpoint,
+    mutationKey: baseWorkspaceMutationId ?? null,
+    canWriteSourceControl,
   });
   const manualCompactionProviderAvailable = hasAvailableCompactionProvider({
     providers: providerInstanceEntries,
@@ -4042,6 +4075,7 @@ export default function ChatView(props: ChatViewProps) {
                   threadId={activeThread.id}
                   projectId={activeThread.projectId}
                   worktreePath={activeThread.worktreePath}
+                  isWorking={isWorking}
                   isServerThread={isServerThread}
                   {...(draftId ? { draftId } : {})}
                   composerDraftTarget={composerDraftTarget}

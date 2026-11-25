@@ -1,9 +1,12 @@
 import {
   AuthOrchestrationOperateScope,
+  AuthSourceControlWriteScope,
   EDITORS,
   EditorId,
   EnvironmentAuthorizationError,
   EnvironmentId,
+  type ProjectId,
+  type ThreadId,
 } from "@t3tools/contracts";
 import {
   mapAtomCommandResult,
@@ -16,6 +19,10 @@ import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/reactivity";
 import { msg } from "gt-react";
+import {
+  remapPathToEditorWorktree,
+  runPushToEditorWorktreeWithConfirm,
+} from "./editorWorktreeSync.logic";
 import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "./hooks/useLocalStorage";
 import { m } from "./i18n/messages";
 import { shellEnvironment } from "./state/shell";
@@ -88,10 +95,70 @@ function resolveAndPersistPreferredEditor(availableEditors: readonly EditorId[])
   return editor ?? null;
 }
 
+export interface OpenInPreferredEditorWorktreeSync {
+  readonly threadId: ThreadId;
+  readonly projectId?: ProjectId | undefined;
+  readonly worktreePath: string | null | undefined;
+}
+
+async function pushWorktreeBeforeFileOpen(input: {
+  readonly environmentId: EnvironmentId;
+  readonly cwd: string;
+  readonly threadId: ThreadId;
+  readonly projectId?: ProjectId | undefined;
+  readonly editorLabel: string;
+}): Promise<
+  | { readonly status: "pushed"; readonly editorWorktreePath: string }
+  | { readonly status: "cancelled" }
+  | { readonly status: "fallback" }
+> {
+  const [
+    { isAtomCommandInterrupted, runAtomCommand, squashAtomCommandFailure },
+    { appAtomRegistry },
+    { vcsEnvironment },
+  ] = await Promise.all([
+    import("@t3tools/client-runtime/state/runtime"),
+    import("./rpc/atomRegistry"),
+    import("./state/vcs"),
+  ]);
+  let fallback = false;
+  const pushed = await runPushToEditorWorktreeWithConfirm({
+    environmentId: input.environmentId,
+    cwd: input.cwd,
+    threadId: input.threadId,
+    projectId: input.projectId,
+    editorLabel: input.editorLabel,
+    pushCommand: async (args) => {
+      const result = await runAtomCommand(
+        appAtomRegistry,
+        vcsEnvironment.pushToEditorWorktree,
+        args,
+      );
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const failure = squashAtomCommandFailure(result);
+        if (
+          typeof failure === "object" &&
+          failure !== null &&
+          "_tag" in failure &&
+          failure._tag === "GitCommandError"
+        ) {
+          fallback = true;
+        }
+      }
+      return result;
+    },
+  });
+  if (pushed) return { status: "pushed", editorWorktreePath: pushed.editorWorktreePath };
+  return fallback ? { status: "fallback" } : { status: "cancelled" };
+}
+
 export function useOpenInPreferredEditor(
   environmentId: EnvironmentId | null,
   availableEditors: readonly EditorId[],
   projectRoot?: string,
+  worktreeSync?:
+    | OpenInPreferredEditorWorktreeSync
+    | (() => OpenInPreferredEditorWorktreeSync | undefined),
 ) {
   const openInEditor = useAtomCommand(shellEnvironment.openInEditor, {
     reportFailure: false,
@@ -140,15 +207,55 @@ export function useOpenInPreferredEditor(
         ),
       );
     }
-    const uri = /^file:\/\//iu.test(targetPath) ? parseFileUrlHref(targetPath) : null;
+
+    let effectiveTargetPath = targetPath;
+    let effectiveProjectRoot = projectRoot;
+    const resolvedSync = typeof worktreeSync === "function" ? worktreeSync() : worktreeSync;
+    const threadWorktreePath = resolvedSync?.worktreePath;
+    if (
+      resolvedSync &&
+      threadWorktreePath &&
+      editor !== "file-manager" &&
+      readEnvironmentScope(environmentId, AuthSourceControlWriteScope) &&
+      remapPathToEditorWorktree({
+        targetPath,
+        threadWorktreePath,
+        editorWorktreePath: threadWorktreePath,
+      }) !== null
+    ) {
+      const editorLabel = EDITORS.find((candidate) => candidate.id === editor)?.label ?? editor;
+      const pushOutcome = await pushWorktreeBeforeFileOpen({
+        environmentId,
+        cwd: threadWorktreePath,
+        threadId: resolvedSync.threadId,
+        projectId: resolvedSync.projectId,
+        editorLabel,
+      });
+      if (pushOutcome.status === "cancelled") {
+        return AsyncResult.success(editor);
+      }
+      if (pushOutcome.status === "pushed") {
+        effectiveTargetPath =
+          remapPathToEditorWorktree({
+            targetPath,
+            threadWorktreePath,
+            editorWorktreePath: pushOutcome.editorWorktreePath,
+          }) ?? pushOutcome.editorWorktreePath;
+        effectiveProjectRoot = pushOutcome.editorWorktreePath;
+      }
+    }
+
+    const uri = /^file:\/\//iu.test(effectiveTargetPath)
+      ? parseFileUrlHref(effectiveTargetPath)
+      : null;
     const { line, column } = uri ? splitFilePathPosition("", uri.hash) : {};
     const result = await openInEditor({
       environmentId,
       input: {
-        cwd: uri ? safeDecodeURIComponent(uri.path) : targetPath,
+        cwd: uri ? safeDecodeURIComponent(uri.path) : effectiveTargetPath,
         ...(uri ? { position: { line, column } } : {}),
         editor,
-        ...(projectRoot ? { projectRoot } : {}),
+        ...(effectiveProjectRoot ? { projectRoot: effectiveProjectRoot } : {}),
       },
     });
     return mapAtomCommandResult(result, () => editor);
